@@ -1,0 +1,154 @@
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --app-bg: #f5f6f8;
+  --sidebar-bg: #eef1f4;
+  --surface: #ffffff;
+  --surface-raised: #eef1f4;
+  --text-primary: #161b22;
+  --text-secondary: #596574;
+  --text-tertiary: #697586;
+  --icon-muted: #697586;
+  --border: #e2e6eb;
+  --border-strong: #c7cdd5;
+  --control-border: #7a8491;
+  --accent: #9a5b00;
+  --accent-strong: #754500;
+  --accent-text: #754500;
+  --accent-on: #ffffff;
+  --accent-soft: #f8ebdd;
+  --accent-wash: #fffaf4;
+  --accent-ring: rgb(154 91 0 / 18%);
+  --accent-shadow: rgb(154 91 0 / 15%);
+  --success: #176b45;
+  --success-soft: #e8f5ee;
+  --success-border: #b8dfc9;
+  --danger: #b42318;
+  --danger-on: #ffffff;
+  --danger-soft: #fdecea;
+  --danger-border: #f2c2bd;
+  --warning: #8a4b00;
+  --warning-soft: #fff3d6;
+  --warning-border: #efd59c;
+  --blue: #175a9c;
+  --blue-soft: #e9f2ff;
+  --blue-border: #c3d8f4;
+  --focus-ring: #175a9c;
+  --hero-glow: rgb(236 174 93 / 15%);
+  --rail-glow: rgb(236 174 93 / 11%);
+  --illustration-line: #d9c9af;
+  --illustration-top: #7b8796;
+  --illustration-bottom: #414b58;
+  --shadow-subtle: 0 2px 8px rgb(26 32 40 / 4%);
+  --shadow-card: 0 8px 20px rgb(26 32 40 / 8%);
+  --shadow-overlay: 10px 0 38px rgb(10 12 16 / 22%);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --app-bg: #111318;
+  --sidebar-bg: #1b1f27;
+  --surface: #1b1f27;
+  --surface-raised: #252a33;
+  --text-primary: #f2f4f7;
+  --text-secondary: #b4bdc9;
+  --text-tertiary: #a7b0bc;
+  --icon-muted: #a7b0bc;
+  --border: #333943;
+  --border-strong: #525b68;
+  --control-border: #929dab;
+  --accent: #f4a340;
+  --accent-strong: #ffc170;
+  --accent-text: #ffd49a;
+  --accent-on: #171a20;
+  --accent-soft: #392b1b;
+  --accent-wash: #26221c;
+  --accent-ring: rgb(244 163 64 / 24%);
+  --accent-shadow: rgb(244 163 64 / 15%);
+  --success: #8fe3b1;
+  --success-soft: #183526;
+  --success-border: #315c42;
+  --danger: #ff9b91;
+  --danger-on: #281415;
+  --danger-soft: #3a2024;
+  --danger-border: #684044;
+  --warning: #ffd08a;
+  --warning-soft: #3a2b17;
+  --warning-border: #70532b;
+  --blue: #9ac7ff;
+  --blue-soft: #1d2d42;
+  --blue-border: #354d6a;
+  --focus-ring: #9ac7ff;
+  --hero-glow: rgb(244 163 64 / 12%);
+  --rail-glow: rgb(244 163 64 / 8%);
+  --illustration-line: #51402a;
+  --illustration-top: #818c99;
+  --illustration-bottom: #343d48;
+  --shadow-subtle: 0 2px 9px rgb(0 0 0 / 13%);
+  --shadow-card: 0 10px 22px rgb(0 0 0 / 22%);
+  --shadow-overlay: 10px 0 38px rgb(0 0 0 / 44%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --app-bg: #111318;
+    --sidebar-bg: #1b1f27;
+    --surface: #1b1f27;
+    --surface-raised: #252a33;
+    --text-primary: #f2f4f7;
+    --text-secondary: #b4bdc9;
+    --text-tertiary: #a7b0bc;
+    --icon-muted: #a7b0bc;
+    --border: #333943;
+    --border-strong: #525b68;
+    --control-border: #929dab;
+    --accent: #f4a340;
+    --accent-strong: #ffc170;
+    --accent-text: #ffd49a;
+    --accent-on: #171a20;
+    --accent-soft: #392b1b;
+    --accent-wash: #26221c;
+    --accent-ring: rgb(244 163 64 / 24%);
+    --accent-shadow: rgb(244 163 64 / 15%);
+    --success: #8fe3b1;
+    --success-soft: #183526;
+    --success-border: #315c42;
+    --danger: #ff9b91;
+    --danger-on: #281415;
+    --danger-soft: #3a2024;
+    --danger-border: #684044;
+    --warning: #ffd08a;
+    --warning-soft: #3a2b17;
+    --warning-border: #70532b;
+    --blue: #9ac7ff;
+    --blue-soft: #1d2d42;
+    --blue-border: #354d6a;
+    --focus-ring: #9ac7ff;
+    --hero-glow: rgb(244 163 64 / 12%);
+    --rail-glow: rgb(244 163 64 / 8%);
+    --illustration-line: #51402a;
+    --illustration-top: #818c99;
+    --illustration-bottom: #343d48;
+    --shadow-subtle: 0 2px 9px rgb(0 0 0 / 13%);
+    --shadow-card: 0 10px 22px rgb(0 0 0 / 22%);
+    --shadow-overlay: 10px 0 38px rgb(0 0 0 / 44%);
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root,
+  :root[data-theme="light"] {
+    --border: #7a8491;
+    --border-strong: #596574;
+    --control-border: #424b56;
+    --focus-ring: #003f73;
+  }
+
+  :root[data-theme="dark"] {
+    --border: #929dab;
+    --border-strong: #b4bdc9;
+    --control-border: #d9e0e8;
+    --focus-ring: #e1f0ff;
+  }
+}
