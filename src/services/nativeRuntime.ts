@@ -124,6 +124,39 @@ export type TransactionDemo = {
   remainingUtxos: { outpoint: { transactionId: string; outputIndex: number }; output: TransactionOutput }[];
 };
 
+export type PeerView = {
+  id: string;
+  name: string;
+  chainName: string;
+  headers: BlockHeader[];
+  hashes: string[];
+  height: number;
+  tipHash: string;
+  cumulativeWork: number;
+  valid: boolean;
+};
+
+export type PeerComparison = {
+  leftId: string;
+  rightId: string;
+  leftHeight: number;
+  rightHeight: number;
+  commonHeight: number | null;
+  leftCumulativeWork: number;
+  rightCumulativeWork: number;
+  preferredPeerId: string | null;
+};
+
+export type PeerPropagation = {
+  adopted: boolean;
+  sourceId: string;
+  destinationId: string;
+  sourceHeight: number;
+  destinationHeight: number;
+  forkHeight: number | null;
+  reason: string;
+};
+
 export type MiningProgressHandler = (progress: MiningProgress) => void;
 
 export const hashInput = (input: string) => invoke<HashResult>("hash_input", { input });
@@ -136,6 +169,17 @@ export const calculateMerkleRoot = (transactionIds: string[]) =>
   invoke<string>("calculate_merkle_root", { request: { transactionIds } });
 export const runTransactionDemo = (amount: number, fee: number) =>
   invoke<TransactionDemo>("run_transaction_demo", { amount, fee });
+export const listPeers = () => invoke<PeerView[]>("list_peers");
+export const createPeer = (name: string, copyFromId: string) =>
+  invoke<PeerView>("create_peer", { name, copyFromId });
+export const removePeer = (peerId: string) =>
+  invoke<PeerView[]>("remove_peer", { peerId });
+export const minePeerBlock = (peerId: string) =>
+  invoke<PeerView>("mine_peer_block", { peerId });
+export const comparePeerChains = (leftId: string, rightId: string) =>
+  invoke<PeerComparison>("compare_peer_chains", { leftId, rightId });
+export const propagatePeerChain = (sourceId: string, destinationId: string) =>
+  invoke<PeerPropagation>("propagate_peer_chain", { sourceId, destinationId });
 
 export function mineBlock(
   jobId: string,

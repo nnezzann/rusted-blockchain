@@ -8,7 +8,7 @@
 use std::{
     collections::HashMap,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, MutexGuard,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -25,6 +25,7 @@ use crate::{
         experiment::Experiment,
         hash::{display_hash, sha256, sha256d},
         mining::{MAX_MINING_ATTEMPTS, MiningProgress, MiningResult},
+        peer::{PeerComparison, PeerNetwork, PeerView, PropagationResult},
         validation::HeaderInspection,
     },
     persistence::repository::ExperimentRepository,
@@ -40,6 +41,24 @@ pub struct HashResult {
 #[derive(Default)]
 pub struct MiningRuntime {
     jobs: Mutex<HashMap<String, Arc<AtomicBool>>>,
+}
+
+pub struct PeerRuntime {
+    network: Mutex<PeerNetwork>,
+}
+
+impl PeerRuntime {
+    pub fn new(network: PeerNetwork) -> Self {
+        Self {
+            network: Mutex::new(network),
+        }
+    }
+
+    fn lock(&self) -> Result<MutexGuard<'_, PeerNetwork>, String> {
+        self.network
+            .lock()
+            .map_err(|_| "Peer simulation state is unavailable.".to_string())
+    }
 }
 
 #[tauri::command]
@@ -187,4 +206,58 @@ pub fn delete_experiment(
     id: String,
 ) -> Result<bool, String> {
     experiments::delete(&repository, &id)
+}
+
+#[tauri::command]
+pub fn list_peers(runtime: State<'_, PeerRuntime>) -> Result<Vec<PeerView>, String> {
+    runtime.lock()?.views()
+}
+
+#[tauri::command]
+pub fn create_peer(
+    runtime: State<'_, PeerRuntime>,
+    name: String,
+    copy_from_id: Option<String>,
+) -> Result<PeerView, String> {
+    let mut network = runtime.lock()?;
+    let peer = network.create(name, copy_from_id.as_deref())?;
+    network.view(&peer.id)
+}
+
+#[tauri::command]
+pub fn remove_peer(
+    runtime: State<'_, PeerRuntime>,
+    peer_id: String,
+) -> Result<Vec<PeerView>, String> {
+    let mut network = runtime.lock()?;
+    network.remove(&peer_id)?;
+    network.views()
+}
+
+#[tauri::command]
+pub fn mine_peer_block(
+    runtime: State<'_, PeerRuntime>,
+    peer_id: String,
+) -> Result<PeerView, String> {
+    let mut network = runtime.lock()?;
+    network.mine_next(&peer_id)?;
+    network.view(&peer_id)
+}
+
+#[tauri::command]
+pub fn compare_peer_chains(
+    runtime: State<'_, PeerRuntime>,
+    left_id: String,
+    right_id: String,
+) -> Result<PeerComparison, String> {
+    runtime.lock()?.compare(&left_id, &right_id)
+}
+
+#[tauri::command]
+pub fn propagate_peer_chain(
+    runtime: State<'_, PeerRuntime>,
+    source_id: String,
+    destination_id: String,
+) -> Result<PropagationResult, String> {
+    runtime.lock()?.propagate(&source_id, &destination_id)
 }

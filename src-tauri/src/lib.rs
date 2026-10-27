@@ -30,6 +30,8 @@ pub fn run() {
             )
             .map_err(std::io::Error::other)?;
             app.manage(repository);
+            let peers = domain::peer::PeerNetwork::new().map_err(std::io::Error::other)?;
+            app.manage(commands::PeerRuntime::new(peers));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -45,6 +47,12 @@ pub fn run() {
             commands::create_experiment,
             commands::update_experiment,
             commands::delete_experiment,
+            commands::list_peers,
+            commands::create_peer,
+            commands::remove_peer,
+            commands::mine_peer_block,
+            commands::compare_peer_chains,
+            commands::propagate_peer_chain,
             system::get_system_info,
             compute::get_gpu_status,
             compute::run_compute_probe,

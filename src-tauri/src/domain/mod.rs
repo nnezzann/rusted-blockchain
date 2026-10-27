@@ -13,6 +13,7 @@ pub mod experiment;
 pub mod hash;
 pub mod merkle;
 pub mod mining;
+pub mod peer;
 pub mod target;
 pub mod transaction;
 pub mod validation;
