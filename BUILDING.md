@@ -42,17 +42,17 @@ The app preserves the hands-on progression while using Bitcoin-like rules in the
 ### First useful release
 
 1. **Hash lab:** Enter data and inspect its SHA-256 and double-SHA-256 results. Explain the avalanche effect by comparing hashes before and after a small edit.
-2. **Block lab:** Inspect and edit a block's version, previous-block hash, Merkle root, timestamp, target (`nBits`), and nonce. Show the serialized header, resulting hash, target comparison, and validity.
+2. **Block lab:** Inspect and edit a block's version, previous-block hash, Merkle root, timestamp, target (`nBits`), nonce, and arbitrary payload. Commit payload bytes as an additional Merkle leaf and mine for a configurable displayed-hash zero prefix in addition to numeric target validity.
 3. **Mining:** Search nonce values until the header hash is at or below the experiment's easy target. Show attempts, elapsed time, and current status; allow cancellation. Do not use a UI-thread loop.
-4. **Chain lab:** Link blocks by previous-header hash. Editing a block invalidates descendants; re-mining restores validity. Make the invalid state and the reason explicit.
+4. **Chain lab:** Link blocks by previous-header hash. Let learners edit any block's header fields and arbitrary payload; edits invalidate proof of work and/or descendants. Re-mine the selected block and descendants in order with a chosen zero-prefix difficulty.
 5. **Transaction and reward lab:** The current demo constructs a bounded coinbase output, signs one spend, verifies input ownership and value conservation, calculates a fee, and applies UTXO changes. The independent Merkle calculator accepts displayed IDs and constructs a root.
 6. **Experiment storage:** Rust-backed create, list, rename/update, open, duplicate, delete, import, and export are implemented with SQLite JSON payloads. Transaction, header-chain, and peer-chain screens can explicitly save snapshots; lab state is not automatically synchronized and action history remains future work.
 
-The **Peer Network** screen operates a real in-process simulation: peers hold independent validated header chains, can mine competing proof-of-work blocks, compare forks and equal-target cumulative work, and manually adopt a stronger chain. It does not open sockets or communicate with external nodes.
+The **Peer Network** screen operates an in-process simulation: peers hold independent header chains, expose editable fields and arbitrary payloads per block while keeping the shared target fixed, can re-mine a selected block and its descendants, compare forks and equal-target cumulative work, and manually adopt a stronger chain. It does not open sockets or communicate with external nodes.
 
 ### Follow-on learning features
 
-- **Peer/fork simulation:** Independent in-process header chains, competing blocks, equal-target cumulative-work comparison, and manual propagation are implemented. Transaction-aware reorganization and network P2P remain follow-on work.
+- **Peer/fork simulation:** Independent in-process header chains, editable block headers/payloads, configurable leading-zero mining, competing branches, equal-target cumulative-work comparison, and manual propagation are implemented. Transaction-aware reorganization and network P2P remain follow-on work.
 - **Difficulty adjustment:** Add an optional, small educational retarget window after fixed-target proof-of-work is clear. Keep its parameters distinct from Bitcoin's real 2,016-block/two-week schedule.
 - **Guided lessons:** Add short explanations, prompts, and resettable examples around each experiment without making the learning flow depend on a tutorial.
 
@@ -109,7 +109,7 @@ src-tauri/src/
   window.rs             native Tauri window state/actions
 ```
 
-The Rust domain and application layers implement hashing, headers, proof of work, mining, linked chains, Merkle roots, a signed transaction/UTXO example, and the in-process peer simulation. SQLite backs isolated experiment records and JSON snapshot payloads. Application use cases and typed Tauri commands expose these operations. The block and peer chains remain header-only; transaction outputs are not committed into mined block contents.
+The Rust domain and application layers implement hashing, headers, numeric proof of work, configurable displayed-hash zero-prefix mining, linked chains, Merkle roots, a signed transaction/UTXO example, and the in-process peer simulation. The block and peer labs allow arbitrary data to be committed as an additional synthetic Merkle leaf and edit individual headers. SQLite backs isolated experiment records and JSON snapshot payloads. Transaction outputs are not included in mined block bodies or peer-chain consensus.
 
 Keep the dependency direction explicit: `domain` is pure Rust and depends on no app infrastructure; `application` coordinates domain operations and narrow infrastructure interfaces; Tauri commands are the IPC boundary; persistence and GPU/window/system services remain infrastructure. The frontend should receive typed command results and must not become the source of truth for blockchain state.
 
@@ -129,11 +129,12 @@ These services do not grant shell execution, elevated privileges, arbitrary file
 
 - **Hashing:** Rust returns SHA-256 and Bitcoin-style displayed SHA-256d values for arbitrary UTF-8 input.
 - **Headers and proof of work:** Rust serializes the 80-byte header, validates its hash fields and compact target, computes its SHA-256d hash, and compares that hash numerically with the target. `0x207fffff` is the easiest permitted target; the standalone Mining lesson uses `0x1f00ffff` so progress and cancellation can be observed.
-- **Mining:** A bounded Rust worker searches nonce values off the UI thread, streams periodic progress over a Tauri channel, and supports cancellation. Each request is capped at ten million attempts in Rust; the UI currently requests at most two million.
-- **Header chains:** Rust validates each header's proof of work and parent hash link, and returns per-height reasons. The demo chain is generated and mined in Rust. It contains empty Merkle roots and no transactions.
+- **Mining:** A bounded Rust worker searches nonce values off the UI thread, streams periodic progress over a Tauri channel, and supports cancellation. Requests are capped at ten million attempts in Rust; the dedicated Mining screen uses two million, while block/chain/peer prefix searches use up to ten million.
+- **Header chains:** Rust validates each header's proof of work and parent hash link, and returns per-height reasons. The demo chain is generated and mined in Rust. Learner payloads are committed via a synthetic Merkle leaf; these are not transaction bodies.
+- **Arbitrary payloads and prefix mining:** Rust commits learner-entered UTF-8 data into the header Merkle root. Block, chain, and peer exercises can require up to five leading hexadecimal zeroes while still validating the standard compact target. This display-prefix rule is a bounded teaching layer, not Bitcoin's proof-of-work definition.
 - **Merkle roots:** Rust decodes displayed transaction IDs, double-hashes pairs, duplicates an unpaired final node, and returns the resulting displayed root. Supplied IDs are not independently validated as transaction IDs.
 
-The transaction demonstration is not connected to mined block contents or the Merkle root lesson. Experiment JSON snapshots can preserve explicit transaction, header-chain, or peer-chain results, but currently edited lab state is not continuously synchronized into a selected experiment. Peer simulation uses synthetic header commitments without transactions. These are explicit simplifications, not Bitcoin compatibility or production security.
+The transaction demonstration is not connected to mined block contents or the Merkle root lesson. Experiment JSON snapshots can preserve explicit transaction, header-chain, or peer-chain results, but edited lab state is not continuously synchronized into a selected experiment. Peer simulation uses synthetic header commitments without transactions. These are explicit simplifications, not Bitcoin compatibility or production security.
 
 ### Persistence
 

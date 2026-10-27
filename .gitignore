@@ -10,8 +10,6 @@
 /src-tauri/target/
 
 # Local environment and credentials
-.env
-.env.*
 !.env.example
 *.pem
 *.key
@@ -40,7 +38,6 @@ pnpm-debug.log*
 
 # Editor and operating-system files
 .idea/
-.vscode/*
 !.vscode/extensions.json
 *.swp
 *.swo
@@ -51,3 +48,4 @@ pnpm-debug.log*
 *.sln
 .DS_Store
 Thumbs.db
+config.bat
