@@ -8,18 +8,18 @@ The project is intentionally educational. It is **not** a Bitcoin node, wallet, 
 
 - Provides a first-run setup flow, a navigable learning workspace, light/dark/system themes, and responsive lab screens.
 - **Hash Lab:** computes SHA-256 and Bitcoin-style displayed SHA-256d values in Rust.
-- **Block Lab:** serializes the 80-byte Bitcoin-layout header, calculates its hash, decodes a bounded compact target, and reports numeric proof-of-work validity.
+- **Block Lab:** edits the 80-byte Bitcoin-layout header and arbitrary payload data, commits that data through the Merkle root, calculates its hash, and mines for a configurable leading-zero prefix while also checking the compact target.
 - **Mining:** searches header nonces in a Rust worker, streams progress to the UI, enforces an attempt limit, and supports cancellation.
-- **Chain Lab:** generates and validates a short Rust-mined header chain, shows parent-link/proof-of-work errors, and lets learners change and re-mine a block and its descendants.
+- **Chain Lab:** generates a short header chain; learners can edit each block's header fields and arbitrary data, see broken links/proof-of-work, and re-mine a selected block and descendants with a chosen leading-zero prefix.
 - **Merkle calculator:** computes a double-SHA-256 Merkle root from displayed transaction IDs in Rust.
 - **Transactions & UTXOs:** creates a capped demo coinbase output, signs a spend with an ephemeral Ed25519 key, validates ownership/value/fee rules, and applies the UTXO changes in Rust. Private keys are neither returned nor saved.
-- **Peer Network:** runs separate in-process header chains, mines valid competing branches, compares their shared ancestor and cumulative work, and manually propagates a stronger chain. State is memory-only and no sockets are opened.
+- **Peer Network:** runs separate in-process header chains; learners can edit individual peer blocks and payloads, re-mine that block and descendants, create forks, compare common ancestry/work, and manually propagate a stronger chain. State is memory-only and no sockets are opened.
 - **Experiments:** stores metadata and JSON snapshot payloads in a versioned SQLite database under Tauri's app-data directory. Create, open, rename, duplicate, import/export, and delete operations use Rust commands; transaction, header-chain, and peer screens can save explicit snapshots. Old browser metadata is migrated once.
 - Reports host and app-data information through Rust/Tauri infrastructure commands.
 - Offers an optional, generic GPU/CPU compute probe and native window controls in Settings. The compute probe checks general device support; it does not hash blocks or perform mining.
 - Uses a compact, theme-matched title bar with draggable, minimize, maximize/restore, and close controls.
 
-Important limits: transaction serialization and Ed25519 authorization are a small Chain-V model, not Bitcoin transaction serialization or Script. The transaction demo creates a temporary ledger; it is not yet attached to mined block contents. Learners can explicitly save transaction, header-chain, and peer-chain snapshots; other lab state and action history are not automatically captured. Peer chains use one fixed easy target, count valid headers as comparable work units, and reset when the app exits. They are a local simulation, not P2P or network consensus. The app must never be used for funds or real key storage.
+Important limits: arbitrary block payloads are bounded to 64 KiB and committed as a synthetic Merkle leaf; they are not Bitcoin transactions, and Ed25519 authorization is a small Chain-V model, not Bitcoin Script. The transaction demo creates a temporary ledger; it is not attached to mined block bodies. Prefix difficulty is a learning constraint layered on top of valid compact-target proof of work. Learners can explicitly save transaction, header-chain, and peer-chain snapshots; other lab state and action history are not automatically captured. Peer chains use one fixed easy target, count valid headers as comparable work units, and reset when the app exits. They are a local simulation, not P2P or network consensus. The app must never be used for funds or real key storage.
 
 ## Architecture
 

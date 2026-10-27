@@ -200,6 +200,7 @@ Purpose: compare independent chain copies and illustrate why peers may hold diff
 - Overview lists Rust-managed peers, validated chain height, actual tip hash, and cumulative-work units. Peer state is in memory and resets when the app restarts.
 - Create peers by copying another peer's current chain; remove peers with confirmation. Peer labels are not network addresses and no port/socket settings are exposed.
 - Mine a block independently on any peer. Compare two distinct chains, common ancestor, actual block hashes, and cumulative work. Manually propagate either chain; Rust adopts it only if it is valid and strictly has greater work.
+- Allow editing each peer block's payload and header fields other than `nBits`; keep the target fixed across peers so the current equal-target work comparison remains meaningful. Applying an edit must show resulting invalid state immediately; provide a selected-height mine action that re-links and mines descendants in sequence. Include a shared configurable leading-zero target for this demonstration, while retaining compact-target validation.
 - Every peer uses the same fixed easy target, so displayed work is the count of valid headers. Explain that this is a local simulation, not target-weighted Bitcoin consensus or network P2P.
 
 ### Hash Lab
@@ -221,6 +222,7 @@ Purpose: show which header fields are hashed and how edits affect validity.
 - Show serialized header (hex), double-SHA-256 hash, target, and comparison/validity status.
 - A focused header card with editable fields and derived-value result card. Keep long values readable using monospace and copy controls.
 - Explain that editing a committed header field changes the hash. For non-genesis blocks, previous hash must link to the parent block.
+- Include arbitrary text data (bounded to 64 KiB) as a Merkle-tree leaf in addition to the editable base Merkle root. Show the resulting committed root. Allow the learner to set a bounded leading-hex-zero difficulty for mining; Rust must still require the hash to meet the compact target.
 - Mining CTA starts a Rust job and shows progress; if mining is being explored in the dedicated Mining screen, link to it while preserving the selected experiment/block context.
 - Clearly separate user-editable fields from derived/read-only hash values. Invalid field input should identify the field and not corrupt the last valid backend state.
 
@@ -243,7 +245,8 @@ Purpose: make parent-hash links and cascading invalidation visible.
 - Present a small chain as vertically stacked cards or a horizontal scroll only when there is a clear responsive reason. Desktop cards show block height/index, short hash, previous hash, transaction count, and status.
 - Selecting a block opens its details or focuses an editor panel.
 - Show genesis distinctly; show each later block's link to its previous hash.
-- Editing a block causes downstream invalidation. Show the exact cause and which descendants need revalidation/re-mining; do not imply that merely editing the first block automatically restores the chain.
+- Allow editing every selected block's header fields and arbitrary payload (bounded to 64 KiB). Editing a block causes downstream invalidation. Show the exact cause and which descendants need revalidation/re-mining; do not imply that merely editing the first block automatically restores the chain.
+- Let learners choose a bounded leading-zero prefix and mine the selected block plus descendants in order. Disable this action while there are unapplied editor changes.
 - Include **Add Block**, **Mine**, and **Reset Example** controls where supported. Confirm destructive/reset actions when they would discard user edits.
 - Use icons/labels plus red status to identify invalid descendants; preserve unaffected blocks' normal appearance.
 
