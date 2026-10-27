@@ -29,11 +29,13 @@ import {
   type WindowSnapshot,
 } from "../../services/nativeRuntime";
 import {
-  loadPrototypeExperiments,
-  isPrototypeExperiment,
-  savePrototypeExperiments,
-  type PrototypeExperiment,
-} from "../../services/prototypeExperiments";
+  createExperiment,
+  deleteExperiment,
+  isExperimentExport,
+  listExperiments,
+  updateExperiment,
+  type SavedExperiment,
+} from "../../services/experiments";
 import type { ScreenId } from "../../App";
 import type { LearningMode, ThemeChoice } from "../Onboarding";
 
@@ -832,77 +834,111 @@ function MerkleView() {
 }
 
 export function ExperimentsScreen() {
-  const [initialLoad] = useState(loadPrototypeExperiments);
-  const [experiments, setExperiments] = useState<PrototypeExperiment[]>(initialLoad.experiments);
+  const [experiments, setExperiments] = useState<SavedExperiment[]>([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [error, setError] = useState(initialLoad.error ?? "");
+  const [openedId, setOpenedId] = useState<string | null>(null);
+  const [error, setError] = useState("");
   const [information, setInformation] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    let active = true;
+    void listExperiments()
+      .then((saved) => {
+        if (active) setExperiments(saved);
+      })
+      .catch((reason: unknown) => {
+        if (active) setError(`Could not load saved experiments: ${errorMessage(reason)}`);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const filtered = useMemo(
     () => experiments.filter((item) => `${item.name} ${item.kind} ${item.description}`.toLowerCase().includes(query.toLowerCase())),
     [experiments, query],
   );
 
-  const save = (next: PrototypeExperiment[]) => {
-    try {
-      savePrototypeExperiments(next);
-      setExperiments(next);
-      setError("");
-      setInformation("");
-      return true;
-    } catch {
-      setError("Could not save this experiment in local app storage. Check app storage permissions and try again.");
-      return false;
-    }
-  };
-
-  const create = (event: FormEvent) => {
+  const create = async (event: FormEvent) => {
     event.preventDefault();
     const name = newName.trim();
     if (!name) {
       setError("Enter a name for the experiment.");
       return;
     }
-    const experiment = {
-      id: crypto.randomUUID(),
-      name,
-      kind: "Blank experiment",
-      description: "Created in the frontend prototype; blockchain data is not connected.",
-      updatedAt: new Date().toISOString(),
-    };
-    if (save([experiment, ...experiments])) {
+    try {
+      const experiment = await createExperiment({
+        name,
+        kind: "Blank experiment",
+        description: "Created locally; blockchain snapshot data can be added as learning features are connected.",
+        data: {},
+      });
+      setExperiments((current) => [experiment, ...current]);
+      setError("");
+      setInformation("");
       setNewName("");
       setCreating(false);
+    } catch (reason) {
+      setError(`Could not create experiment: ${errorMessage(reason)}`);
     }
   };
 
-  const rename = (event: FormEvent, id: string) => {
+  const rename = async (event: FormEvent, id: string) => {
     event.preventDefault();
     const name = renameValue.trim();
     if (!name) {
       setError("Experiment name cannot be empty.");
       return;
     }
-    if (save(experiments.map((item) => item.id === id ? { ...item, name, updatedAt: new Date().toISOString() } : item))) setRenamingId(null);
-  };
-
-  const duplicate = (experiment: PrototypeExperiment) => {
-    save([{ ...experiment, id: crypto.randomUUID(), name: `${experiment.name} copy`, updatedAt: new Date().toISOString() }, ...experiments]);
-  };
-
-  const remove = (experiment: PrototypeExperiment) => {
-    if (window.confirm(`Delete “${experiment.name}”? This removes its prototype data from this app profile.`)) {
-      save(experiments.filter((item) => item.id !== experiment.id));
+    const current = experiments.find((item) => item.id === id);
+    if (!current) return;
+    try {
+      const updated = await updateExperiment({ ...current, name });
+      setExperiments((items) => items.map((item) => item.id === id ? updated : item));
+      setRenamingId(null);
+      setError("");
+    } catch (reason) {
+      setError(`Could not rename experiment: ${errorMessage(reason)}`);
     }
   };
 
-  const exportExperiment = (experiment: PrototypeExperiment) => {
+  const duplicate = async (experiment: SavedExperiment) => {
     try {
-      const blob = new Blob([JSON.stringify({ format: "learning-blockchain-experiment-prototype", version: 1, experiment }, null, 2)], { type: "application/json" });
+      const copy = await createExperiment({
+        name: `${experiment.name} copy`,
+        kind: experiment.kind,
+        description: experiment.description,
+        data: experiment.data,
+      });
+      setExperiments((current) => [copy, ...current]);
+      setError("");
+    } catch (reason) {
+      setError(`Could not duplicate experiment: ${errorMessage(reason)}`);
+    }
+  };
+
+  const remove = async (experiment: SavedExperiment) => {
+    if (!window.confirm(`Delete “${experiment.name}” and its saved local snapshot?`)) return;
+    try {
+      await deleteExperiment(experiment.id);
+      setExperiments((current) => current.filter((item) => item.id !== experiment.id));
+      if (openedId === experiment.id) setOpenedId(null);
+      setError("");
+    } catch (reason) {
+      setError(`Could not delete experiment: ${errorMessage(reason)}`);
+    }
+  };
+
+  const exportExperiment = (experiment: SavedExperiment) => {
+    try {
+      const blob = new Blob([JSON.stringify({ format: "chain-v-experiment", version: 2, experiment }, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -910,7 +946,7 @@ export function ExperimentsScreen() {
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       setError("");
-      setInformation(`Exported “${experiment.name}” as metadata only. No blockchain snapshot is included.`);
+      setInformation(`Exported “${experiment.name}” with its saved JSON snapshot.`);
     } catch {
       setInformation("");
       setError("Export failed. The experiment metadata could not be prepared for download.");
@@ -927,26 +963,21 @@ export function ExperimentsScreen() {
         typeof parsed !== "object" ||
         parsed === null ||
         !("format" in parsed) ||
-        parsed.format !== "learning-blockchain-experiment-prototype" ||
-        !("version" in parsed) ||
-        parsed.version !== 1 ||
-        !("experiment" in parsed) ||
-        !isPrototypeExperiment(parsed.experiment)
+        !isExperimentExport(parsed)
       ) {
         throw new Error("This file is not a supported experiment export.");
       }
       const item = parsed.experiment;
       if (!item.name.trim()) throw new Error("The experiment export is missing a name.");
-      const imported: PrototypeExperiment = {
-        id: crypto.randomUUID(),
+      const imported = await createExperiment({
         name: item.name,
-        kind: "Imported prototype",
-        description: "Imported metadata only; this file is not a validated blockchain snapshot.",
-        updatedAt: new Date().toISOString(),
-      };
-      if (save([imported, ...experiments])) {
-        setInformation(`Imported “${imported.name}” as metadata only. No blockchain snapshot was loaded.`);
-      }
+        kind: "Imported experiment",
+        description: item.description,
+        data: item.data ?? {},
+      });
+      setExperiments((current) => [imported, ...current]);
+      setInformation(`Imported “${imported.name}” and its snapshot into local SQLite storage.`);
+      setError("");
     } catch (reason) {
       setInformation("");
       setError(reason instanceof Error ? `Import failed: ${reason.message}` : "Import failed: the selected file could not be read.");
@@ -955,7 +986,7 @@ export function ExperimentsScreen() {
 
   return (
     <div className="experiments-layout">
-      <PrototypeNote><strong>Prototype storage.</strong> Experiments currently persist in this app's local browser profile. Rust-owned SQLite storage and validated blockchain snapshots are not connected.</PrototypeNote>
+      <PrototypeNote><strong>Local experiment storage.</strong> Rust persists each experiment record and JSON snapshot in SQLite under the app data directory. Imported snapshot data is stored as data, not treated as validated chain state.</PrototypeNote>
       {error && <div className="notice notice--error" role="alert"><Icon name="info" size={16} /><p>{error}</p><button className="icon-button" aria-label="Dismiss error" onClick={() => setError("")}><Icon name="close" size={15} /></button></div>}
       {information && <div className="notice notice--info" role="status"><Icon name="info" size={16} /><p>{information}</p><button className="icon-button" aria-label="Dismiss message" onClick={() => setInformation("")}><Icon name="close" size={15} /></button></div>}
       <div className="experiment-toolbar">
@@ -972,10 +1003,17 @@ export function ExperimentsScreen() {
           <div className="toolbar-actions"><button type="button" className="button button--secondary" onClick={() => { setCreating(false); setNewName(""); }}>Cancel</button><button className="button button--primary" type="submit">Create experiment</button></div>
         </form>
       )}
+      {loading && <div className="panel lab-panel" role="status">Loading saved experiments from SQLite…</div>}
+      {openedId && experiments.find((item) => item.id === openedId) && (
+        <section className="panel experiment-snapshot">
+          <div className="panel-title-row"><div><h3>Saved snapshot</h3><p>{experiments.find((item) => item.id === openedId)?.name}</p></div><button className="icon-button" aria-label="Close saved snapshot" onClick={() => setOpenedId(null)}><Icon name="close" size={15} /></button></div>
+          <pre><code>{JSON.stringify(experiments.find((item) => item.id === openedId)?.data, null, 2)}</code></pre>
+        </section>
+      )}
       {filtered.length === 0 ? (
         <div className="panel experiments-empty">
           <span className="empty-data-icon"><Icon name="archive" size={24} /></span>
-          <h2>{query ? "No matching experiments" : "Your workspace starts here"}</h2>
+          <h2>{loading ? "Loading saved experiments" : query ? "No matching experiments" : "Your workspace starts here"}</h2>
           <p>{query ? "Try another search, or clear the search field." : "Create an experiment to keep a local place for your blockchain explorations."}</p>
           {!query && <button className="button button--primary" onClick={() => setCreating(true)}><Icon name="plus" size={15} /> Create your first experiment</button>}
         </div>
@@ -1001,11 +1039,11 @@ export function ExperimentsScreen() {
                 )}
               </div>
               <div className="experiment-actions">
-                <button className="button button--secondary" onClick={() => { setError(""); setInformation("This prototype stores experiment metadata only. Rust-backed experiment snapshots are not available to open yet."); }}>Open</button>
-                <button className="icon-button" aria-label={`Rename ${experiment.name}`} title="Rename" onClick={() => { setRenameValue(experiment.name); setRenamingId(experiment.id); }}><Icon name="edit" size={15} /></button>
-                <button className="icon-button" aria-label={`Duplicate ${experiment.name}`} title="Duplicate" onClick={() => duplicate(experiment)}><Icon name="copy" size={15} /></button>
+                <button className="button button--secondary" onClick={() => setOpenedId(openedId === experiment.id ? null : experiment.id)}>{openedId === experiment.id ? "Close" : "Open"}</button>
+                <button className="icon-button" aria-label={`Rename ${experiment.name}`} title="Rename" onClick={() => { setError(""); setRenameValue(experiment.name); setRenamingId(experiment.id); }}><Icon name="edit" size={15} /></button>
+                <button className="icon-button" aria-label={`Duplicate ${experiment.name}`} title="Duplicate" onClick={() => void duplicate(experiment)}><Icon name="copy" size={15} /></button>
                 <button className="icon-button" aria-label={`Export ${experiment.name}`} title="Export" onClick={() => exportExperiment(experiment)}><Icon name="download" size={15} /></button>
-                <button className="icon-button icon-button--danger" aria-label={`Delete ${experiment.name}`} title="Delete" onClick={() => remove(experiment)}><Icon name="trash" size={15} /></button>
+                <button className="icon-button icon-button--danger" aria-label={`Delete ${experiment.name}`} title="Delete" onClick={() => void remove(experiment)}><Icon name="trash" size={15} /></button>
               </div>
             </article>
           ))}

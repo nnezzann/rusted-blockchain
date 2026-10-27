@@ -1703,6 +1703,26 @@
   margin-top: 0;
 }
 
+.experiment-snapshot {
+  margin-bottom: 12px;
+  padding: 16px;
+}
+
+.experiment-snapshot pre {
+  max-height: 360px;
+  margin: 12px 0 0;
+  padding: 13px;
+  overflow: auto;
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .experiments-empty {
   display: grid;
   min-height: 280px;

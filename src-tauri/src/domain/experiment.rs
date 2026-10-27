@@ -1,6 +1,19 @@
-//! Serializable domain snapshot types for one isolated learning experiment.
+//! Serializable record for one isolated learning experiment.
 //!
-//! Future snapshots can aggregate blocks, transactions, and local chain state.
-//! Persistence belongs in [`crate::persistence`], while use cases that open,
-//! reset, or update snapshots belong in [`crate::application`]. No experiment
-//! model is implemented yet.
+//! The snapshot payload is versioned by the exported format at the application
+//! boundary. Database representation and migrations belong in persistence.
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Experiment {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub description: String,
+    pub data: Value,
+    pub created_at: i64,
+    pub updated_at: i64,
+}

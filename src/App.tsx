@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Icon, type IconName } from "./components/Icon";
 import { Onboarding, type LearningMode, type ThemeChoice } from "./features/Onboarding";
-import { loadPrototypeExperiments } from "./services/prototypeExperiments";
+import { listExperiments, type SavedExperiment } from "./services/experiments";
 import { closeWindow, controlWindow, errorMessage, getWindowSnapshot } from "./services/nativeRuntime";
 import {
   BlockLabScreen,
@@ -444,8 +444,25 @@ function ScreenContent({
 }
 
 function HomeScreen({ onNavigate }: { onNavigate: (screen: ScreenId) => void }) {
-  const [saved] = useState(loadPrototypeExperiments);
-  const recentExperiments = saved.experiments.slice(0, 3);
+  const [recentExperiments, setRecentExperiments] = useState<SavedExperiment[]>([]);
+  const [experimentsError, setExperimentsError] = useState("");
+  const [experimentsLoading, setExperimentsLoading] = useState(true);
+  useEffect(() => {
+    let active = true;
+    void listExperiments()
+      .then((saved) => {
+        if (active) setRecentExperiments(saved.slice(0, 3));
+      })
+      .catch((reason: unknown) => {
+        if (active) setExperimentsError(`Saved experiments are unavailable: ${errorMessage(reason)}`);
+      })
+      .finally(() => {
+        if (active) setExperimentsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const quickStarts: { screen: ScreenId; icon: IconName; title: string; copy: string }[] = [
     { screen: "hash", icon: "hash", title: "Hash Lab", copy: "See how small changes create completely new hashes." },
     { screen: "block", icon: "cube", title: "Block Lab", copy: "Build and inspect a block header and check its validity." },
@@ -505,7 +522,7 @@ function HomeScreen({ onNavigate }: { onNavigate: (screen: ScreenId) => void }) 
           <div><h2>Recent experiments</h2><p>Pick up where you left off.</p></div>
           <button className="text-button" onClick={() => onNavigate("experiments")}>View all <Icon name="arrow-right" size={14} /></button>
         </div>
-        {saved.error && <div className="notice notice--error" role="alert"><Icon name="info" size={16} /><p>{saved.error}</p></div>}
+        {experimentsError && <div className="notice notice--error" role="alert"><Icon name="info" size={16} /><p>{experimentsError}</p></div>}
         {recentExperiments.length > 0 ? (
           <div className="recent-list">
             {recentExperiments.map((experiment) => (
@@ -520,7 +537,7 @@ function HomeScreen({ onNavigate }: { onNavigate: (screen: ScreenId) => void }) 
         ) : (
           <div className="recent-empty">
             <span className="recent-empty-icon"><Icon name="archive" size={18} /></span>
-            <span><strong>No experiments yet</strong><small>Create one to save your learning progress locally.</small></span>
+            <span><strong>{experimentsLoading ? "Loading saved experiments…" : "No experiments yet"}</strong><small>Create one to save your learning progress locally.</small></span>
             <button className="button button--secondary" onClick={() => onNavigate("experiments")}>Create an experiment</button>
           </div>
         )}

@@ -14,17 +14,20 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tauri::{State, ipc::Channel};
 
 use crate::{
-    application::{blocks, mining, transactions},
+    application::{blocks, experiments, mining, transactions},
     domain::{
         block::BlockHeader,
         chain::ChainValidation,
+        experiment::Experiment,
         hash::{display_hash, sha256, sha256d},
         mining::{MAX_MINING_ATTEMPTS, MiningProgress, MiningResult},
         validation::HeaderInspection,
     },
+    persistence::repository::ExperimentRepository,
 };
 
 #[derive(Debug, Serialize)]
@@ -140,4 +143,48 @@ pub fn run_transaction_demo(
     fee: u64,
 ) -> Result<transactions::TransactionDemo, String> {
     transactions::run_demo(amount, fee)
+}
+
+#[tauri::command]
+pub fn list_experiments(
+    repository: State<'_, ExperimentRepository>,
+) -> Result<Vec<Experiment>, String> {
+    experiments::list(&repository)
+}
+
+#[tauri::command]
+pub fn create_experiment(
+    repository: State<'_, ExperimentRepository>,
+    name: String,
+    kind: String,
+    description: String,
+    data: Option<Value>,
+) -> Result<Experiment, String> {
+    experiments::create(
+        &repository,
+        name,
+        kind,
+        description,
+        data.unwrap_or_else(|| serde_json::json!({})),
+    )
+}
+
+#[tauri::command]
+pub fn update_experiment(
+    repository: State<'_, ExperimentRepository>,
+    id: String,
+    name: String,
+    kind: String,
+    description: String,
+    data: Value,
+) -> Result<Experiment, String> {
+    experiments::update(&repository, id, name, kind, description, data)
+}
+
+#[tauri::command]
+pub fn delete_experiment(
+    repository: State<'_, ExperimentRepository>,
+    id: String,
+) -> Result<bool, String> {
+    experiments::delete(&repository, &id)
 }
