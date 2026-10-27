@@ -1432,6 +1432,75 @@
   border-radius: 50%;
 }
 
+.check-pending--passed {
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.transaction-result {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 14px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.transaction-result h3 {
+  margin: 0;
+  color: var(--success);
+  font-size: 14px;
+}
+
+.transaction-result__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.transaction-result > .field-hint {
+  margin: 0;
+}
+
+.utxo-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.utxo-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 1.2fr);
+  align-items: center;
+  gap: 12px;
+  padding: 13px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.utxo-row > div {
+  display: grid;
+  gap: 4px;
+}
+
+.utxo-row strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.utxo-row small {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.utxo-row code {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .transaction-disclaimer {
   margin-top: 14px;
   padding: 10px;
@@ -2066,6 +2135,10 @@
   .status-check small {
     grid-column: 2;
     margin-top: -6px;
+  }
+
+  .utxo-row {
+    grid-template-columns: 1fr;
   }
 
   .experiment-card {

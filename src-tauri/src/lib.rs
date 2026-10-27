@@ -28,6 +28,7 @@ pub fn run() {
             commands::mine_block,
             commands::cancel_mining,
             commands::calculate_merkle_root,
+            commands::run_transaction_demo,
             system::get_system_info,
             compute::get_gpu_status,
             compute::run_compute_probe,

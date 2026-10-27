@@ -1,10 +1,10 @@
 //! Use cases that coordinate domain rules with infrastructure.
 //!
-//! This layer will receive validated requests from Tauri commands, call the
-//! pure [`crate::domain`] rules, use persistence through a narrow boundary, and
-//! return typed results for IPC serialization. Keep policy here; do not put
-//! blockchain rules in command handlers or React. These modules are scaffolds.
+//! This layer receives requests from Tauri commands, calls the pure domain
+//! rules, uses persistence through a narrow boundary, and returns typed results
+//! for IPC serialization. Keep policy here, not in command handlers or React.
 
 pub mod blocks;
 pub mod experiments;
 pub mod mining;
+pub mod transactions;

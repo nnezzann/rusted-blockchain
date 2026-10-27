@@ -96,6 +96,34 @@ export type MiningResult = {
   elapsedMilliseconds: number;
 };
 
+export type TransactionInput = {
+  previousOutput: { transactionId: string; outputIndex: number };
+  publicKey: string;
+  signature: string;
+};
+
+export type TransactionOutput = {
+  value: number;
+  recipient: string;
+};
+
+export type TransactionDemo = {
+  coinbaseTransactionId: string;
+  transaction: {
+    version: number;
+    inputs: TransactionInput[];
+    outputs: TransactionOutput[];
+  };
+  validation: {
+    transactionId: string;
+    inputValue: number;
+    outputValue: number;
+    fee: number;
+    verifiedSignatures: number;
+  };
+  remainingUtxos: { outpoint: { transactionId: string; outputIndex: number }; output: TransactionOutput }[];
+};
+
 export type MiningProgressHandler = (progress: MiningProgress) => void;
 
 export const hashInput = (input: string) => invoke<HashResult>("hash_input", { input });
@@ -106,6 +134,8 @@ export const validateChain = (headers: BlockHeader[]) =>
   invoke<ChainValidation>("validate_chain", { headers });
 export const calculateMerkleRoot = (transactionIds: string[]) =>
   invoke<string>("calculate_merkle_root", { request: { transactionIds } });
+export const runTransactionDemo = (amount: number, fee: number) =>
+  invoke<TransactionDemo>("run_transaction_demo", { amount, fee });
 
 export function mineBlock(
   jobId: string,

@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{State, ipc::Channel};
 
 use crate::{
-    application::{blocks, mining},
+    application::{blocks, mining, transactions},
     domain::{
         block::BlockHeader,
         chain::ChainValidation,
@@ -132,4 +132,12 @@ pub struct MerkleRequest {
 #[tauri::command]
 pub fn calculate_merkle_root(request: MerkleRequest) -> Result<String, String> {
     crate::domain::merkle::root(&request.transaction_ids)
+}
+
+#[tauri::command]
+pub fn run_transaction_demo(
+    amount: u64,
+    fee: u64,
+) -> Result<transactions::TransactionDemo, String> {
+    transactions::run_demo(amount, fee)
 }

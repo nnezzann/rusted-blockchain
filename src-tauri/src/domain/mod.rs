@@ -1,13 +1,11 @@
-//! Pure blockchain concepts and rules, to be implemented as a learning exercise.
+//! Pure blockchain concepts and rules owned by the Rust learning model.
 //!
-//! This layer will own canonical data types and deterministic rules. It must
-//! not depend on Tauri commands, the webview, SQLite, or the GPU runtime.
+//! This layer owns canonical data types and deterministic rules. It must not
+//! depend on Tauri commands, the webview, SQLite, or the GPU runtime.
 //! Application use cases will call into these modules; infrastructure and UI
 //! should consume their results rather than reproduce their decisions.
 //!
-//! The submodules below are intentionally empty. Add one concept at a time and
-//! accompany its implementation with ordinary Rust unit tests and fixed test
-//! vectors where relevant.
+//! Protocol simplifications are intentional and are not Bitcoin consensus.
 
 pub mod block;
 pub mod chain;

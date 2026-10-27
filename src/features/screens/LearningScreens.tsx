@@ -14,6 +14,7 @@ import {
   getSystemInfo,
   getWindowSnapshot,
   runComputeProbe,
+  runTransactionDemo,
   validateChain,
   type BlockHeader,
   type ChainValidation,
@@ -23,6 +24,7 @@ import {
   type HeaderInspection,
   type MiningProgress,
   type MiningResult,
+  type TransactionDemo,
   type SystemInfo,
   type WindowSnapshot,
 } from "../../services/nativeRuntime";
@@ -661,10 +663,12 @@ type TransactionTab = "transactions" | "utxos" | "merkle";
 
 export function TransactionsScreen({ learningMode }: ModeProps) {
   const [tab, setTab] = useState<TransactionTab>("transactions");
-  const [recipient, setRecipient] = useState("");
-  const [amount, setAmount] = useState("");
-  const [fee, setFee] = useState("");
+  const [amount, setAmount] = useState("25000000");
+  const [fee, setFee] = useState("1000000");
   const [showCoinbase, setShowCoinbase] = useState(false);
+  const [demo, setDemo] = useState<TransactionDemo | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const tabs: { id: TransactionTab; label: string; icon: IconName }[] = [
     { id: "transactions", label: "Transactions", icon: "arrows" },
     { id: "utxos", label: "UTXOs", icon: "database" },
@@ -689,7 +693,7 @@ export function TransactionsScreen({ learningMode }: ModeProps) {
     setTab(nextTab.id);
   };
   return (
-    <LabLayout title="Transactions & rewards" icon="arrows" note="Explore how outputs are created, spent, and committed to a block." guidance="Transactions spend specific unspent outputs and create new outputs. Their identifiers are paired and hashed into a Merkle root committed by a block header." learningMode={learningMode} backendConnected backendMessage="Merkle roots are calculated in Rust. Transaction creation, UTXO state, signatures, and transaction validation are not implemented yet.">
+    <LabLayout title="Transactions & rewards" icon="arrows" note="Explore how outputs are created, spent, and committed to a block." guidance="Transactions spend specific unspent outputs and create new outputs. Their identifiers are paired and hashed into a Merkle root committed by a block header." learningMode={learningMode} backendConnected backendMessage="Rust creates a temporary coinbase-funded ledger, signs a spend with an ephemeral Ed25519 key, verifies it, and applies the resulting UTXO changes. This educational format is not Bitcoin Script or a wallet.">
       <div className="tab-list" role="tablist" aria-label="Transaction learning views" onKeyDown={handleTabKeyDown}>
         {tabs.map((item) => (
           <button
@@ -710,69 +714,88 @@ export function TransactionsScreen({ learningMode }: ModeProps) {
         {tab === "transactions" && (
           <div className="lab-two-column transaction-grid">
             <section className="panel lab-panel">
-              <div className="panel-title-row"><div><h3>New transaction</h3><p>Compose an educational transaction draft.</p></div><span className="sample-pill">DRAFT</span></div>
-              <div className="field">
-                <label className="field-label" htmlFor="tx-input">Input · previous output</label>
-                <select className="text-input" id="tx-input" defaultValue="">
-                  <option value="" disabled>Select an available UTXO…</option>
-                  <option value="example">Illustrative input · not connected</option>
-                </select>
-                <span className="field-hint">A transaction input spends one specific earlier output.</span>
-              </div>
-              <div className="field">
-                <label className="field-label" htmlFor="tx-recipient">Output · recipient script/address</label>
-                <input className="text-input" id="tx-recipient" value={recipient} onChange={(event) => setRecipient(event.target.value)} placeholder="Enter an educational placeholder" />
-              </div>
+              <div className="panel-title-row"><div><h3>Signed transaction demo</h3><p>Rust funds, signs, verifies, and applies this spend.</p></div><span className="sample-pill">EPHEMERAL</span></div>
               <div className="form-inline">
                 <div className="field">
-                  <label className="field-label" htmlFor="tx-amount">Amount (learning units)</label>
-                  <input className="text-input" id="tx-amount" type="number" min="0" step="1" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0" />
+                  <label className="field-label" htmlFor="tx-amount">Recipient amount (learning units)</label>
+                  <input className="text-input" id="tx-amount" type="number" min="1" step="1" value={amount} onChange={(event) => { setDemo(null); setAmount(event.target.value); }} />
                 </div>
                 <div className="field">
                   <label className="field-label" htmlFor="tx-fee">Fee (learning units)</label>
-                  <input className="text-input" id="tx-fee" type="number" min="0" step="1" value={fee} onChange={(event) => setFee(event.target.value)} placeholder="0" />
+                  <input className="text-input" id="tx-fee" type="number" min="0" step="1" value={fee} onChange={(event) => { setDemo(null); setFee(event.target.value); }} />
                 </div>
               </div>
-              <button className="button button--primary full-width" disabled title="Transaction validation requires Rust">Validate transaction</button>
+              <button className="button button--primary full-width" disabled={loading} onClick={() => {
+                const parsedAmount = Number(amount);
+                const parsedFee = Number(fee);
+                if (!Number.isSafeInteger(parsedAmount) || parsedAmount <= 0 || !Number.isSafeInteger(parsedFee) || parsedFee < 0) {
+                  setError("Enter a positive whole-unit amount and a non-negative whole-unit fee.");
+                  return;
+                }
+                setLoading(true);
+                setDemo(null);
+                setError("");
+                void runTransactionDemo(parsedAmount, parsedFee)
+                  .then(setDemo)
+                  .catch((reason: unknown) => setError(errorMessage(reason)))
+                  .finally(() => setLoading(false));
+              }}>{loading ? "Signing and validating…" : "Create, sign & apply"}</button>
+              {error && <p className="backend-error" role="alert">{error}</p>}
+              {demo && <div className="transaction-result">
+                <h3>Rust validation · accepted</h3>
+                <div className="transaction-result__metrics">
+                  <Metric label="Input value" value={demo.validation.inputValue.toLocaleString()} />
+                  <Metric label="Output value" value={demo.validation.outputValue.toLocaleString()} />
+                  <Metric label="Fee" value={demo.validation.fee.toLocaleString()} />
+                  <Metric label="Verified signatures" value={String(demo.validation.verifiedSignatures)} />
+                </div>
+                <div className="derived-value"><span>Transaction ID · SHA-256d</span><code>{demo.validation.transactionId}</code></div>
+                <p className="field-hint">The temporary signing keys are discarded after the command. No key material is returned or persisted.</p>
+              </div>}
             </section>
             <section className="panel transaction-status-panel">
-              <div className="panel-title-row"><div><h3>Validation status</h3><p>Backend results appear here.</p></div><span className="pending-pill"><span className="pending-dot" />Pending</span></div>
-              <StatusCheck label="Input exists" />
-              <StatusCheck label="No double spend" />
-              <StatusCheck label="Values conserved" />
-              <StatusCheck label="Fee valid" />
-              <StatusCheck label="Signature verified" />
+              <div className="panel-title-row"><div><h3>Validation status</h3><p>Consensus checks happen in Rust.</p></div><span className={`pending-pill${demo ? " status-pill--success" : ""}`}><span className="pending-dot" />{demo ? "Accepted" : "Ready"}</span></div>
+              <StatusCheck label="Input exists and is unspent" passed={Boolean(demo)} />
+              <StatusCheck label="No duplicate input" passed={Boolean(demo)} />
+              <StatusCheck label="Outputs do not exceed inputs" passed={Boolean(demo)} />
+              <StatusCheck label="Fee is the remaining value" passed={Boolean(demo)} />
+              <StatusCheck label="Ed25519 input signature verified" passed={Boolean(demo)} />
               <div className="notice notice--info transaction-disclaimer">
                 <Icon name="info" size={16} />
-                <p>Signatures are not implemented yet. This preview does not claim that a transaction is authorized or valid.</p>
+                <p>Chain-V uses a small custom transaction format and disposable demo keys. It is not Bitcoin Script, a wallet, or suitable for real assets.</p>
               </div>
               <button className="text-button coinbase-toggle" onClick={() => setShowCoinbase((shown) => !shown)}>
                 <Icon name="coin" size={15} /> {showCoinbase ? "Hide" : "Learn about"} coinbase rewards
               </button>
-              {showCoinbase && <p className="coinbase-explainer">A coinbase transaction is the special first transaction in a block. Its reward is limited by the simplified rules in the Rust learning model.</p>}
+              {showCoinbase && <p className="coinbase-explainer">This demo first creates a 50,000,000-unit reward output. Rust rejects a coinbase above that cap; this is a fixed educational allowance, not a Bitcoin subsidy schedule.</p>}
             </section>
           </div>
         )}
-        {tab === "utxos" && <UtxoView />}
+        {tab === "utxos" && <UtxoView demo={demo} />}
         {tab === "merkle" && <MerkleView />}
       </div>
     </LabLayout>
   );
 }
 
-function StatusCheck({ label }: { label: string }) {
-  return <div className="status-check"><span className="check-pending"><Icon name="clock" size={12} /></span><span>{label}</span><small>Not checked</small></div>;
+function StatusCheck({ label, passed }: { label: string; passed: boolean }) {
+  return <div className="status-check"><span className={`check-pending${passed ? " check-pending--passed" : ""}`}><Icon name={passed ? "check" : "clock"} size={12} /></span><span>{label}</span><small>{passed ? "Passed" : "Run demo"}</small></div>;
 }
 
-function UtxoView() {
+function UtxoView({ demo }: { demo: TransactionDemo | null }) {
   return (
     <section className="panel lab-panel">
-      <div className="panel-title-row"><div><h3>Unspent transaction outputs</h3><p>Each output may be spent once as a later transaction input.</p></div><span className="sample-pill">NO DATA</span></div>
-      <div className="empty-data">
+      <div className="panel-title-row"><div><h3>Unspent transaction outputs</h3><p>Each output may be spent once as a later transaction input.</p></div><span className="sample-pill">{demo ? `${demo.remainingUtxos.length} UTXOS` : "READY"}</span></div>
+      {demo ? <div className="utxo-list">{demo.remainingUtxos.length ? demo.remainingUtxos.map(({ outpoint, output }) => (
+        <div className="utxo-row" key={`${outpoint.transactionId}:${outpoint.outputIndex}`}>
+          <div><strong>{output.value.toLocaleString()} learning units</strong><small>Output #{outpoint.outputIndex} · recipient key {output.recipient.slice(0, 12)}…</small></div>
+          <code>{outpoint.transactionId}</code>
+        </div>
+      )) : <p className="field-hint">The spend consumed the full input; no outputs remain unspent.</p>}</div> : <div className="empty-data">
         <span><Icon name="database" size={21} /></span>
-        <strong>UTXO set is not available yet</strong>
-        <small>Once connected, Rust will show validated outputs and their spent/unspent state here.</small>
-      </div>
+        <strong>No demo ledger yet</strong>
+        <small>Run the signed transaction demo to see the Rust UTXO state after spending.</small>
+      </div>}
     </section>
   );
 }
