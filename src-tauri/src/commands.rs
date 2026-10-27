@@ -2,8 +2,8 @@
 //!
 //! Commands validate transport-level constraints, delegate to
 //! [`crate::application`], and serialize typed responses. They do not duplicate
-//! hash, target, mining, or chain rules. Transaction validation and
-//! persistence-backed experiments are not implemented yet.
+//! hash, target, mining, transaction, or chain rules. Persistence operations
+//! delegate to the Rust-owned SQLite repository.
 
 use std::{
     collections::HashMap,

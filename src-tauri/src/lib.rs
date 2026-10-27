@@ -1,10 +1,9 @@
 //! Tauri application entry point and backend composition root.
 //!
-//! Infrastructure commands currently live beside their implementations in
-//! `compute.rs`, `system.rs`, and `window.rs`. The [`domain`], [`application`],
-//! [`commands`], and [`persistence`] modules are the extension points for the
-//! learner's blockchain implementation. Keep the dependency direction inward:
-//! domain code should not depend on Tauri, persistence, or GPU libraries.
+//! Infrastructure commands live beside their implementations in `compute.rs`,
+//! `system.rs`, and `window.rs`. Blockchain rules stay in the pure
+//! [`domain`] modules; application use cases, Tauri IPC, and SQLite persistence
+//! depend inward on those rules, never the other way around.
 
 use tauri::Manager;
 

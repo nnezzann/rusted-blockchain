@@ -6,16 +6,16 @@ This document is the working specification for the complete desktop frontend of 
 
 Build a local-first educational desktop app that lets a learner explore Bitcoin-like mechanisms through small experiments. The app demonstrates concepts; it is not a Bitcoin node, wallet, network client, or implementation compatible with Bitcoin. It must not suggest that experiments contain real money or that easy local mining represents Bitcoin network mining.
 
-The project began as a starter scaffold and now has an initial frontend prototype:
+The app and its first Rust-backed learning features are implemented:
 
 - Tauri 2, React 19, TypeScript, and Vite.
 - Linux target: Fedora Linux 45. Tauri uses WebKitGTK on Linux.
-- The current frontend includes onboarding, a persistent workspace shell, lab surfaces, a peer-network comparison prototype, settings, and local experiment/peer metadata storage.
+- The frontend includes onboarding, a persistent workspace shell, all learning labs, settings, SQLite-backed experiment controls, and an in-process peer/fork simulation.
 - The app window is configured for 1280 × 850 with a 1000 × 700 minimum.
-- The scaffold's `greet` Rust command is not a blockchain backend. The blockchain commands, persistence contract, and authoritative calculation/validation behavior remain to be implemented.
-- Dependencies currently include React, React DOM, Tauri API, and the Tauri opener plugin. There is no router, component framework, icon library, or animation library yet.
+- Rust owns hashes, header rules, mining, transaction/UTXO validation, signatures, peer chains, and experiment persistence. Transactions use a small educational format; peers do not communicate over a network.
+- The Tauri bridge uses typed commands and frontend DTOs. Dependencies include React, Tauri API, rusqlite, SHA-256 and Ed25519 libraries, and the generic wgpu probe.
 
-This document remains the target specification. Where the prototype uses sample controls or local metadata before Rust integration, it must label them clearly and must not present frontend-generated blockchain results as authoritative.
+This guide documents current presentation and integration behavior as well as future design goals. Do not present unavailable or simplified behaviors as Bitcoin protocol compatibility.
 
 Implement in the existing stack. Prefer small, accessible React components and CSS custom properties over introducing a UI framework. Keep domain calculations in Rust; frontend code is responsible for presentation, navigation, draft inputs, and transient UI state.
 
@@ -197,12 +197,10 @@ Purpose: orient the learner and resume/start an experiment.
 Purpose: compare independent chain copies and illustrate why peers may hold different valid block hashes.
 
 - Add **Peer Network** to the persistent workspace navigation and Home quick starts.
-- Overview lists independently configurable example peers, their chain label, example address/port, learning difficulty, sample height, and clearly labeled sample tip fingerprint.
-- Create, edit, and remove peer configurations. Validate required labels and port range, prevent duplicate address/port pairs, and confirm removal.
-- Provide a comparison view with two distinct peer selectors and aligned sample block rows. Show a shared prefix and visibly divergent sample hashes beyond the fork point.
-- Explain that independently mined blocks can have different hashes; a real network validates blocks and selects by cumulative proof of work rather than requiring identical tips.
-- In the UI-only prototype, persist peer configuration locally and label every chain/hash as illustrative. Never claim a socket is bound, peers are connected, blocks are mined/validated, or chain work is ranked.
-- Keep this screen ready for a Rust-owned peer/fork simulation service; actual synchronization and network transport are out of scope.
+- Overview lists Rust-managed peers, validated chain height, actual tip hash, and cumulative-work units. Peer state is in memory and resets when the app restarts.
+- Create peers by copying another peer's current chain; remove peers with confirmation. Peer labels are not network addresses and no port/socket settings are exposed.
+- Mine a block independently on any peer. Compare two distinct chains, common ancestor, actual block hashes, and cumulative work. Manually propagate either chain; Rust adopts it only if it is valid and strictly has greater work.
+- Every peer uses the same fixed easy target, so displayed work is the count of valid headers. Explain that this is a local simulation, not target-weighted Bitcoin consensus or network P2P.
 
 ### Hash Lab
 
@@ -254,26 +252,28 @@ Purpose: make parent-hash links and cascading invalidation visible.
 Purpose: demonstrate UTXO-based transactions, fees, coinbase rewards, and Merkle commitments.
 
 - Use a tabbed or segmented layout for **Transactions**, **UTXOs**, and **Merkle Tree**, following the collage reference. Tabs must be keyboard-operable and announce selection.
-- New transaction form models one or more inputs referencing previous transaction ID/output index and one or more outputs with integer base units. Never represent monetary values internally as JavaScript floats.
+- The current **Create, sign & apply** action runs a Rust-owned 50,000,000-unit coinbase-funded example. The learner supplies an integer output amount and fee; Rust generates an ephemeral Ed25519 signer, signs one input, validates the spend, and updates the temporary UTXO set.
 - If a formatted BTC-like display is used, make its unit explicit and convert only at the presentation boundary; this app's units are educational.
-- Show validation checklist with clear pass/fail labels: input exists, no duplicate/double spend, values conserved, fee valid, signature valid when signatures are implemented, transaction accepted/rejected.
-- Explain fees as input total minus output total. Explain coinbase as the special first transaction of a block, bounded by subsidy plus fees according to the simplified backend rules.
-- UTXO view shows outpoint, amount, and spent/unspent state with filters/search if useful.
+- Show the backend validation result, input/output totals, calculated fee, transaction ID, and verified signature count. Invalid amounts and command errors are explicit.
+- Explain fees as input total minus output total. The demonstration coinbase is capped at 50,000,000 learning units; this is a fixed teaching allowance, not a subsidy schedule.
+- UTXO view shows the real temporary post-spend outpoints, values, and recipient public-key prefixes. Each run creates a fresh ledger.
 - Merkle Tree view shows transaction IDs paired and hashed up to the root; explain odd-leaf handling as used by the Rust implementation. Make root visibly connect to selected block header.
-- If keys/signatures are not yet implemented, do not label transactions “signed” or claim owner authorization. Clearly label the current phase's validation limits.
+- Keys are generated and kept in the Rust command for one demo request; no private key is returned or persisted. Explain that Ed25519 checks do not implement Bitcoin Script, a wallet, or real transaction authorization.
+- The sample transaction and UTXO set are not committed into the header/peer chain. A learner may explicitly save its result as an experiment snapshot; it is not autosaved.
 
-### Experiments (local storage/history)
+### Experiments (SQLite snapshots)
 
 Purpose: let users preserve isolated work and revisit previous runs.
 
 - List experiment name, experiment type/lesson, last updated time, short description, and relevant status.
 - Primary **New Experiment** action and empty state for the first visit.
-- Open/resume, rename, duplicate, export, and delete actions. Use an overflow menu for secondary actions.
+- Open the stored JSON payload, rename, duplicate, export, and delete actions. The payload is persisted by Rust in SQLite under the Tauri app-data directory.
+- Transaction, linked-chain, and peer screens expose an explicit save-snapshot action. Experiments are not a live selection shared across labs, and changes are not autosaved.
 - Confirm deletion and any destructive import/replace. Show explicit success/error feedback.
 - Provide search/filter only when it improves a meaningful list; avoid a fake dashboard of statistics.
-- Show action/history detail for edits, mining outcomes, import/export, and restore where backend records it. Distinguish immutable event history from the editable current snapshot.
-- Import/export is JSON. Explain that imports are validated; show validation errors without overwriting existing experiments.
-- No cloud sync or peer/network data.
+- Action/event history is not implemented yet; do not imply that changing a lab automatically updates an experiment snapshot. Explicitly saved snapshots preserve the result at save time.
+- Import/export is JSON. Imports create new records and enforce the backend snapshot size/name limits; imported payloads are data, not validated blockchain state. Older metadata-only browser exports remain importable.
+- No cloud sync; active in-process peers reset on application restart.
 
 ### Settings
 
@@ -334,18 +334,19 @@ This is a target structure, not a demand to pre-create empty files. Build the sh
 
 ## 8. Frontend/backend boundary
 
-Rust owns blockchain data, cryptographic hashes, serialization, proof-of-work validation, UTXO rules, transaction/coinbase validity, Merkle roots, chain validity, and saved experiment state. Never recompute these in React to “preview” a result. This prevents discrepancies between displayed state and actual validation.
+Rust owns blockchain data, cryptographic hashes, serialization, proof-of-work validation, UTXO rules, demo transaction/signature validity, Merkle roots, peer-chain validity/work comparison, and saved experiment records. Never recompute these in React to “preview” a result. The current generic experiment snapshot is not automatically bound to lab state.
 
-Build a typed frontend service layer around Tauri `invoke()` and the supported Tauri channel/event mechanism. Screens should call service functions rather than invoke commands directly. The exact command names/DTOs are not implemented yet: coordinate and document them with the Rust implementation instead of inventing a second API contract.
+Build a typed frontend service layer around Tauri `invoke()` and the supported Tauri channel/event mechanism. Screens should call service functions rather than invoke commands directly. The current adapter exposes the implemented hash, header, mining, transaction demo, experiment CRUD, and peer simulation commands.
 
 Expected command capability groups:
 
 - Setup/preferences: get and save onboarding completion, theme choice, and learning mode.
-- Experiments: list, create, load, update, duplicate, rename, delete, import, export.
-- Labs: compute/display hashes, create/update/validate block and chain data, create/validate transaction and UTXO views.
+- Experiments: list, create, load, update, duplicate, rename, delete, import, and export JSON snapshots through SQLite-backed Rust commands.
+- Labs: compute/display hashes, inspect headers and chains, run the signed transaction/UTXO example, and calculate Merkle roots.
+- Peers: list/create/remove peers, mine a peer block, compare two chains, and manually propagate the stronger chain.
 - Mining: start job with progress channel, cancel job, get final result.
 
-Backend calls must be modeled as pending/success/error states. Disable duplicate submits when appropriate, avoid stale responses replacing a newer selection, and show actionable error messages. Do not silently replace failed backend calls with mock data. During UI development before Rust commands exist, use an explicitly named mock adapter behind the same service interface and make its simulated nature clear in development; remove or disable it in production builds.
+Backend calls must be modeled as pending/success/error states. Disable duplicate submits when appropriate, avoid stale responses replacing a newer selection, and show actionable error messages. Do not silently replace failed backend calls with mock data. Peer simulation itself is local and must be labeled as not using real network transport.
 
 Use channels or a bounded progress stream for mining status; don't broadcast every attempt. Clean up event listeners when components unmount or selected jobs change. Keep UI responsive and ensure cancellation works when navigating away.
 

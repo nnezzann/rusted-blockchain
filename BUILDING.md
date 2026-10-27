@@ -29,13 +29,13 @@ An initial, editable visual reference for these choices is in [`design/color-con
 
 ## Current project baseline
 
-The app uses Tauri 2 + React 19 + TypeScript + Vite. Onboarding, themes, the learning workspace, native shell, and generic compute settings are in place. The Hash, Block, Mining, Chain, and Merkle-root lessons now call the Rust domain through typed Tauri commands. Experiment metadata remains in browser storage, while transactions, UTXOs, persistence, real peer simulation, and network consensus are not implemented. See [`FRONTEND.md`](FRONTEND.md) for the frontend design and implementation requirements.
+The app uses Tauri 2 + React 19 + TypeScript + Vite. Onboarding, themes, native shell, and generic compute settings are in place. Hash, Block, Mining, Chain, Transactions, Merkle, Peer Network, and Experiments call Rust through typed Tauri commands. See [`FRONTEND.md`](FRONTEND.md) for the frontend design and implementation requirements.
 
 ## What the reference teaches
 
 [Anders Brownworth's Blockchain Demo](https://andersbrownworth.com/blockchain/) is organized as small experiments: SHA-256, an editable block, a linked chain, separate peer chains, token transfers, and coinbase rewards. Editing data updates hashes; mining searches for a nonce that meets a simplified difficulty; changing an earlier block invalidates later links. These are useful learning interactions, but the demo's account-like transfers and four-leading-zero rule are not Bitcoin's transaction model or proof-of-work target.
 
-The app should preserve the hands-on progression while using Bitcoin-like rules in the backend: double SHA-256 over a serialized block header, a numeric target, transaction IDs and a Merkle root, UTXO-based spending, and proof-of-work-validated chains. Difficulty will be intentionally low and configurable; this does not make the resulting chain compatible with Bitcoin.
+The app preserves the hands-on progression while using Bitcoin-like rules in the backend: double SHA-256 over a serialized block header, a numeric target, transaction IDs and a Merkle root, UTXO-based spending, and proof-of-work-validated chains. Difficulty is intentionally low and bounded; current chain and peer lessons use fixed targets. This does not make the resulting chain compatible with Bitcoin.
 
 ## Learning features
 
@@ -45,15 +45,14 @@ The app should preserve the hands-on progression while using Bitcoin-like rules 
 2. **Block lab:** Inspect and edit a block's version, previous-block hash, Merkle root, timestamp, target (`nBits`), and nonce. Show the serialized header, resulting hash, target comparison, and validity.
 3. **Mining:** Search nonce values until the header hash is at or below the experiment's easy target. Show attempts, elapsed time, and current status; allow cancellation. Do not use a UI-thread loop.
 4. **Chain lab:** Link blocks by previous-header hash. Editing a block invalidates descendants; re-mining restores validity. Make the invalid state and the reason explicit.
-5. **Transaction and reward lab:** Model transactions as inputs spending specific prior outputs and outputs creating new UTXOs. Validate input existence, no double spends, value conservation, fees, and a single coinbase reward per block. Hash transaction IDs into a Merkle tree (duplicate an unpaired final node) and place its root in the header.
-6. **Experiment storage:** Save, reopen, duplicate, rename, and delete isolated experiments. Preserve their blocks, transactions, parameters, and event history; support exporting an experiment as JSON.
+5. **Transaction and reward lab:** The current demo constructs a bounded coinbase output, signs one spend, verifies input ownership and value conservation, calculates a fee, and applies UTXO changes. The independent Merkle calculator accepts displayed IDs and constructs a root.
+6. **Experiment storage:** Rust-backed create, list, rename/update, open, duplicate, delete, import, and export are implemented with SQLite JSON payloads. Transaction, header-chain, and peer-chain screens can explicitly save snapshots; lab state is not automatically synchronized and action history remains future work.
 
-The frontend now includes a **Peer Network** prototype for configuring separate example peers and comparing independent chain copies. Its local settings and displayed fingerprints are illustrative only. Real in-process peer simulation, chain validation, cumulative-work comparison, and persistence remain backend work; the prototype does not bind ports or communicate over a network.
+The **Peer Network** screen operates a real in-process simulation: peers hold independent validated header chains, can mine competing proof-of-work blocks, compare forks and equal-target cumulative work, and manually adopt a stronger chain. It does not open sockets or communicate with external nodes.
 
 ### Follow-on learning features
 
-- **Keys and signatures:** Generate local demo keypairs, sign transaction inputs, and verify signatures before accepting spends. Clearly mark keys as experimental and never use them for real funds.
-- **Peer/fork simulation:** Keep multiple independent in-process chains. Let the learner manually propagate a block or mine competing branches, then show the valid branch with the greatest cumulative work and the resulting reorganization/stale transactions. This is a simulation, not network consensus or P2P.
+- **Peer/fork simulation:** Independent in-process header chains, competing blocks, equal-target cumulative-work comparison, and manual propagation are implemented. Transaction-aware reorganization and network P2P remain follow-on work.
 - **Difficulty adjustment:** Add an optional, small educational retarget window after fixed-target proof-of-work is clear. Keep its parameters distinct from Bitcoin's real 2,016-block/two-week schedule.
 - **Guided lessons:** Add short explanations, prompts, and resettable examples around each experiment without making the learning flow depend on a tutorial.
 
@@ -92,25 +91,25 @@ Mining should run away from the webview/UI thread. Use a Tauri channel for bound
 
 The React frontend owns navigation and presentation state only: selected lesson, open experiment, form drafts, animation state, and transient progress. Treat Rust responses as the source of truth. The screen layout, theme, component styling, and transition design are specified in [`FRONTEND.md`](FRONTEND.md). Motion must not be required to understand state changes, and should respect reduced-motion preferences.
 
-Suggested source boundaries as the scaffold grows:
+Current source boundaries:
 
 ```text
 src/
-  app/                 navigation and shared application state
-  features/             lesson-specific views and controls
-  services/             typed Tauri invoke/channel adapters
+  App.tsx               navigation and shared application state
+  features/             onboarding, lessons, peer network, and experiments
+  services/             typed Tauri invoke() adapters and migration
   types/                frontend representations of Rust responses
 src-tauri/src/
+  domain/               hashes, headers, transactions, UTXOs, mining, chains, and peers
+  application/          Rust-owned learning and experiment use cases
+  persistence/          SQLite schema migration and experiment repository
+  commands.rs           typed Tauri IPC and backend runtime state
   compute.rs            optional generic wgpu compute and CPU fallback
   system.rs             host capabilities and app-data directory
   window.rs             native Tauri window state/actions
-  domain/               documented hash, block, transaction, chain, validation, and mining modules
-  application/          documented block, experiment, and mining use-case modules
-  commands.rs           documented future IPC boundary for application use cases
-  persistence/          documented future repository and migration modules
 ```
 
-The Rust domain now implements SHA-256/SHA-256d, Bitcoin-layout header serialization and hashing, compact-target checks bounded by `0x207fffff`, proof-of-work validation, cancellable bounded nonce search, linked header-chain validation, and Merkle roots over displayed transaction IDs. Application use cases and Tauri commands expose those operations to the frontend, including progress channels for mining. The block/chain lessons are header-only: they do not validate transactions, UTXO state, full Bitcoin consensus, or network peers. Persistence remains a documented future boundary.
+The Rust domain and application layers implement hashing, headers, proof of work, mining, linked chains, Merkle roots, a signed transaction/UTXO example, and the in-process peer simulation. SQLite backs isolated experiment records and JSON snapshot payloads. Application use cases and typed Tauri commands expose these operations. The block and peer chains remain header-only; transaction outputs are not committed into mined block contents.
 
 Keep the dependency direction explicit: `domain` is pure Rust and depends on no app infrastructure; `application` coordinates domain operations and narrow infrastructure interfaces; Tauri commands are the IPC boundary; persistence and GPU/window/system services remain infrastructure. The frontend should receive typed command results and must not become the source of truth for blockchain state.
 
@@ -118,7 +117,7 @@ Keep the dependency direction explicit: `domain` is pure Rust and depends on no 
 
 The Tauri shell now exposes three infrastructure areas without implementing any blockchain concepts:
 
-- `system.rs` reports OS/architecture, logical processor count, Linux memory totals when available, and the app-specific data directory. It prepares that directory for future Rust-owned persistence; it does not yet create a database or store experiments.
+- `system.rs` reports OS/architecture, logical processor count, Linux memory totals when available, and the app-specific data directory. The experiment repository separately initializes its SQLite database within that directory.
 - `compute.rs` lazily discovers and caches a headless `wgpu` compute device. The Settings screen can run a bounded, generic vector-operation probe on CPU, GPU, or automatic mode. Automatic mode falls back to CPU and includes the reason in its result when GPU initialization or execution fails. This probe is not hashing, mining, or a performance benchmark. GPU availability depends on the host's adapter and drivers.
 - `window.rs` reports native window size, display scale, and state, and supports center, focus, minimize, restore, maximize, and fullscreen actions.
 
@@ -134,20 +133,20 @@ These services do not grant shell execution, elevated privileges, arbitrary file
 - **Header chains:** Rust validates each header's proof of work and parent hash link, and returns per-height reasons. The demo chain is generated and mined in Rust. It contains empty Merkle roots and no transactions.
 - **Merkle roots:** Rust decodes displayed transaction IDs, double-hashes pairs, duplicates an unpaired final node, and returns the resulting displayed root. Supplied IDs are not independently validated as transaction IDs.
 
-The UI presents explicit unavailable/error states for operations it cannot complete. Transaction construction and validation, signatures, UTXO sets, Rust-owned experiment persistence, and distributed peer/fork simulation are still incomplete; the corresponding screens remain clearly marked as prototypes or data-unavailable views.
+The transaction demonstration is not connected to mined block contents or the Merkle root lesson. Experiment JSON snapshots can preserve explicit transaction, header-chain, or peer-chain results, but currently edited lab state is not continuously synchronized into a selected experiment. Peer simulation uses synthetic header commitments without transactions. These are explicit simplifications, not Bitcoin compatibility or production security.
 
 ### Persistence
 
-Use SQLite in Tauri's application data directory, accessed through a Rust-owned repository so persistence and domain validation stay on the backend. Store experiment metadata, serialized experiment snapshots, and an append-only list of user-visible actions/results (for example edits, mining outcomes, imports, and restores). Add schema migrations and make save/update operations transactional so partially written experiments cannot appear successful. Keep experiments isolated; opening or resetting one must not mutate another. Export/import should validate data before it replaces or creates an experiment.
+The implemented `persistence::repository::ExperimentRepository` uses SQLite in Tauri's app-data directory. Schema version 1 stores a bounded JSON snapshot alongside independent metadata and timestamps. Repository operations surface errors and preserve record isolation. Import creates a new experiment rather than replacing an existing record; legacy browser metadata is migrated once. Transaction, chain, and peer screens can save explicit snapshots; selected experiments are not yet a live context shared by labs. Next storage work should add an append-only action history. Imported JSON is stored as data, not accepted as validated chain state.
 
 ## Delivery order
 
 1. **Core correctness:** Define the model, canonical encodings, validation rules, and Rust unit tests before wiring up UI.
 2. **Hash/block/chain lesson:** Add a hash lab, editable header, linked blocks, easy-target mining, validation feedback, and mining cancellation.
 3. **Transaction lesson:** Add UTXOs, transaction validation, coinbase reward limits, fees, and Merkle commitments; introduce keys and signatures before presenting transactions as authorized spends.
-4. **Tauri integration and history:** Add typed commands, bounded mining progress, SQLite-backed isolated experiments, migrations, and validated import/export.
-5. **Fork lesson:** Add independent in-process chains, competing branches, cumulative-work comparison, and reorganization.
-6. **UI design and polish:** Design the landing-to-workspace transition, sidebar, experiment views, history/storage surface, responsive behavior, and reduced-motion behavior after agreeing on this scope.
+4. **Tauri integration and storage:** Typed commands, bounded mining progress, SQLite-backed experiment records, schema migration, and JSON import/export are implemented. Connect live blocks/transactions to a shared selected-experiment context and add an action history.
+5. **Fork lesson:** Independent in-process header chains, competing branches, equal-target cumulative-work comparison, and explicit propagation are implemented. Add transaction-aware blocks, reorganization effects, and target-weighted work as separate lessons.
+6. **UI design and polish:** The main landing-to-workspace, sidebar, experiment, and peer views are implemented. Continue accessibility, responsive, and Fedora WebKitGTK checks as features evolve.
 
 Each lesson should work independently with resettable sample data. A learner should be able to change one input, see which derived values changed, inspect why a block or transaction is valid/invalid, and restore a known-good example without losing other experiments.
 
@@ -157,10 +156,10 @@ Each lesson should work independently with resettable sample data. A learner sho
 |---|---|---|
 | Hashing | Bitcoin-like SHA-256d for headers and transaction IDs | Bitcoin's full transaction wire format and consensus edge cases |
 | Proof of work | Numeric target comparison with deliberately easy parameters | Mainnet difficulty, ASIC-scale mining, or a live network |
-| Ledger | UTXO spending, validation, fees, coinbase, and Merkle commitments | Full Bitcoin Script and all policy/consensus rules |
-| Chain choice | Locally validated chain, later extended to forks by cumulative work | Network propagation, peer discovery, and distributed consensus |
-| Identity | Demo keys/signatures in a later lesson | Production wallet/key management or real-fund use |
-| Storage | Local experiment snapshots and action history | A shared, synchronized, or tamper-proof database |
+| Ledger | One demo transaction, Ed25519 ownership checks, UTXO spending, fees, bounded coinbase, and a separate Merkle calculator | Bitcoin transaction wire format, Script, transaction-to-block validation, and all policy/consensus rules |
+| Chain choice | Validated in-process header forks and header-count work at one fixed target | Target-weighted Bitcoin work, network propagation, peer discovery, and distributed consensus |
+| Identity | Ephemeral Ed25519 signing for a learning spend; private keys never leave Rust | Persistent key custody, wallet recovery, hardware signing, or real-fund use |
+| Storage | SQLite experiment metadata, explicit transaction/chain/peer snapshots, and bounded JSON payloads | Automatic lab synchronization, action/event history, cross-device sync, or tamper-proof storage |
 
 Always label simplified parameters and behaviors in the relevant lesson; do not imply that a saved experiment is part of Bitcoin or that a simulated peer is a real network node.
 
