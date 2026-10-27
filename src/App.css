@@ -642,6 +642,27 @@
   border-color: var(--danger-border);
 }
 
+.backend-error,
+.copy-error {
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.backend-error {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  border-radius: 8px;
+  line-height: 1.45;
+}
+
+.copy-error {
+  display: block;
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+
 .button {
   display: inline-flex;
   min-height: 39px;

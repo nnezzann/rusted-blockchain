@@ -3,9 +3,8 @@
 //! Infrastructure commands currently live beside their implementations in
 //! `compute.rs`, `system.rs`, and `window.rs`. The [`domain`], [`application`],
 //! [`commands`], and [`persistence`] modules are the extension points for the
-//! learner's blockchain implementation; they intentionally contain no
-//! blockchain behavior yet. Keep the dependency direction inward: domain code
-//! should not depend on Tauri, persistence, or GPU libraries.
+//! learner's blockchain implementation. Keep the dependency direction inward:
+//! domain code should not depend on Tauri, persistence, or GPU libraries.
 
 pub mod application;
 pub mod commands;
@@ -20,7 +19,15 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(compute::ComputeRuntime::default())
+        .manage(commands::MiningRuntime::default())
         .invoke_handler(tauri::generate_handler![
+            commands::hash_input,
+            commands::inspect_block,
+            commands::validate_chain,
+            commands::create_demo_chain,
+            commands::mine_block,
+            commands::cancel_mining,
+            commands::calculate_merkle_root,
             system::get_system_info,
             compute::get_gpu_status,
             compute::run_compute_probe,

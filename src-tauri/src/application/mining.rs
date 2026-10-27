@@ -1,6 +1,29 @@
-//! Use cases for starting, observing, and cancelling mining jobs.
+//! Application orchestration for bounded, cancellable block-header mining.
 //!
-//! Future orchestration will take domain mining inputs, select an available
-//! execution backend, and expose bounded progress/cancellation to Tauri. The
-//! existing `compute.rs` probe is generic infrastructure only; it is not
-//! a mining implementation or a ready-made consensus hasher.
+//! The Tauri command owns the job registry/channel, while the pure mining loop
+//! in the domain owns nonce search and target decisions. The generic
+//! `compute.rs` probe remains unrelated to hashing or mining.
+
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
+use crate::domain::{
+    block::BlockHeader,
+    mining::{self, MiningProgress, MiningResult},
+};
+
+pub fn mine_header(
+    header: BlockHeader,
+    max_attempts: u64,
+    cancelled: Arc<AtomicBool>,
+    on_progress: impl FnMut(MiningProgress),
+) -> Result<MiningResult, String> {
+    mining::mine(
+        header,
+        max_attempts,
+        || cancelled.load(Ordering::Relaxed),
+        on_progress,
+    )
+}

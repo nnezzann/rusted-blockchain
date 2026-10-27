@@ -1,16 +1,28 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Icon, type IconName } from "../../components/Icon";
 import {
+  calculateMerkleRoot,
+  cancelMining,
+  createDemoChain,
   controlWindow,
   errorMessage,
   formatBytes,
+  hashInput,
+  inspectBlock,
+  mineBlock,
   getGpuStatus,
   getSystemInfo,
   getWindowSnapshot,
   runComputeProbe,
+  validateChain,
+  type BlockHeader,
+  type ChainValidation,
   type ComputeBackend,
   type ComputeResult,
   type GpuStatus,
+  type HeaderInspection,
+  type MiningProgress,
+  type MiningResult,
   type SystemInfo,
   type WindowSnapshot,
 } from "../../services/nativeRuntime";
@@ -48,6 +60,8 @@ function LabLayout({
   note,
   guidance,
   learningMode,
+  backendConnected = false,
+  backendMessage,
   children,
 }: {
   title: string;
@@ -55,6 +69,8 @@ function LabLayout({
   note: string;
   guidance: string;
   learningMode: LearningMode;
+  backendConnected?: boolean;
+  backendMessage?: string;
   children: ReactNode;
 }) {
   return (
@@ -64,7 +80,10 @@ function LabLayout({
         <div><h2>{title}</h2><p>{note}</p></div>
       </div>
       <PrototypeNote>
-        <strong>Development preview.</strong> Rust commands are not connected yet. Fields are interactive, but derived values and validation are intentionally not calculated in the frontend.
+        <strong>{backendConnected ? "Rust engine connected." : "Development preview."}</strong>{" "}
+        {backendConnected
+          ? backendMessage ?? "Hashing, serialized header data, mining, and header-chain proof-of-work results come from Rust."
+          : "This workflow is not connected to the Rust blockchain engine yet; no derived results are simulated in the frontend."}
       </PrototypeNote>
       <GuidedHelp mode={learningMode}>{guidance}</GuidedHelp>
       {children}
@@ -79,10 +98,84 @@ function GuidedHelp({ mode, children }: { mode: LearningMode; children: ReactNod
   return <div className="guided-help"><Icon name="book" size={15} /><p>{children}</p></div>;
 }
 
+function useMiningJob() {
+  const activeJobId = useRef<string | null>(null);
+  const [mining, setMining] = useState(false);
+  const [progress, setProgress] = useState<MiningProgress | null>(null);
+  const [result, setResult] = useState<MiningResult | null>(null);
+  const [error, setError] = useState("");
+
+  const start = async (header: BlockHeader) => {
+    const jobId = crypto.randomUUID();
+    activeJobId.current = jobId;
+    setMining(true);
+    setProgress(null);
+    setResult(null);
+    setError("");
+    try {
+      const mined = await mineBlock(jobId, header, 2_000_000, setProgress);
+      setResult(mined);
+      return mined;
+    } catch (reason) {
+      const message = errorMessage(reason);
+      if (message.toLowerCase().includes("cancelled")) {
+        setError("Mining cancelled. The header has not been changed.");
+      } else {
+        setError(message);
+      }
+      return null;
+    } finally {
+      activeJobId.current = null;
+      setMining(false);
+    }
+  };
+
+  const cancel = async () => {
+    const jobId = activeJobId.current;
+    if (!jobId) return;
+    try {
+      await cancelMining(jobId);
+    } catch (reason) {
+      setError(errorMessage(reason));
+    }
+  };
+
+  return { mining, progress, result, error, setError, start, cancel };
+}
+
 export function HashLabScreen({ learningMode }: ModeProps) {
   const [input, setInput] = useState(DEFAULT_HASH_INPUT);
+  const [hashes, setHashes] = useState<{ sha256: string; sha256d: string } | null>(null);
+  const [hashError, setHashError] = useState("");
+  const [hashLoading, setHashLoading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setHashLoading(true);
+      setHashError("");
+      void hashInput(input)
+        .then((result) => {
+          if (active) setHashes(result);
+        })
+        .catch((error: unknown) => {
+          if (active) {
+            setHashes(null);
+            setHashError(errorMessage(error));
+          }
+        })
+        .finally(() => {
+          if (active) setHashLoading(false);
+        });
+    }, 140);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [input]);
+
   return (
-    <LabLayout title="Hash function" icon="hash" note="A one-way fingerprint for any input." guidance="SHA-256 maps any message to a fixed-size digest. It is deterministic, but a tiny input change should produce a radically different result." learningMode={learningMode}>
+    <LabLayout title="Hash function" icon="hash" note="A one-way fingerprint for any input." guidance="SHA-256 maps any message to a fixed-size digest. It is deterministic, but a tiny input change should produce a radically different result." learningMode={learningMode} backendConnected>
       <div className="lab-two-column hash-layout">
         <section className="panel lab-panel">
           <div className="panel-title-row">
@@ -98,14 +191,14 @@ export function HashLabScreen({ learningMode }: ModeProps) {
             onChange={(event) => setInput(event.target.value)}
             placeholder="Type or paste a message..."
           />
-          <div className="field-hint"><span>{input.length} characters</span><span>Local preview · no data sent</span></div>
+          <div className="field-hint"><span>{input.length} characters</span><span>Computed locally in Rust</span></div>
         </section>
-        <section className="hash-results">
-          <HashOutput label="SHA-256" description="Single SHA-256 digest" />
-          <HashOutput label="Double SHA-256" description="SHA-256 applied twice" />
+        <section className="hash-results" aria-live="polite">
+          <HashOutput label="SHA-256" description="Single SHA-256 digest" value={hashes?.sha256 ?? ""} loading={hashLoading} error={hashError} />
+          <HashOutput label="Double SHA-256" description="SHA-256 applied twice" value={hashes?.sha256d ?? ""} loading={hashLoading} error={hashError} />
           <div className="explain-card explain-card--blue">
             <span className="explain-icon"><Icon name="info" size={17} /></span>
-            <div><h3>The avalanche effect</h3><p>A tiny change in the input should produce a dramatically different hash. The Rust hashing command will calculate these outputs once integrated.</p></div>
+            <div><h3>The avalanche effect</h3><p>A tiny change in the input produces a dramatically different digest. Both values above are returned by Rust.</p></div>
           </div>
         </section>
       </div>
@@ -113,17 +206,45 @@ export function HashLabScreen({ learningMode }: ModeProps) {
   );
 }
 
-function HashOutput({ label, description }: { label: string; description: string }) {
+function HashOutput({
+  label,
+  description,
+  value,
+  loading,
+  error,
+}: {
+  label: string;
+  description: string;
+  value: string;
+  loading: boolean;
+  error: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState("");
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setCopyError("");
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch (reason) {
+      setCopyError(errorMessage(reason));
+    }
+  };
   return (
     <section className="panel hash-output">
       <div className="panel-title-row">
         <div><h3>{label}</h3><p>{description}</p></div>
-        <span className="pending-pill"><span className="pending-dot" />Awaiting Rust</span>
+        <span className={`pending-pill${error ? " status-pill--error" : value ? " status-pill--success" : ""}`}>
+          <span className="pending-dot" />{error ? "Error" : loading ? "Calculating" : value ? "Ready" : "Waiting"}
+        </span>
       </div>
-      <div className="hash-value hash-value--empty" aria-label={`${label} result is not available until Rust backend integration`}>
-        <span>Result will appear here when connected</span>
-        <button className="icon-button" aria-label="Copy digest" disabled><Icon name="copy" size={15} /></button>
+      <div className={`hash-value${value ? "" : " hash-value--empty"}`}>
+        <code>{error || (loading ? "Calculating…" : value || "Digest unavailable")}</code>
+        <button className="icon-button" aria-label={`Copy ${label} digest`} disabled={!value} onClick={() => void copy()}><Icon name={copied ? "check" : "copy"} size={15} /></button>
       </div>
+      {copied && <span className="sr-only" role="status">Digest copied</span>}
+      {copyError && <p className="copy-error" role="alert">Could not copy digest: {copyError}</p>}
     </section>
   );
 }
@@ -132,18 +253,101 @@ export function BlockLabScreen({ onNavigate, learningMode }: Props) {
   const [fields, setFields] = useState({
     version: "1",
     previous: "0000000000000000000000000000000000000000000000000000000000000000",
-    merkle: "",
-    timestamp: "2026-10-26T12:00",
-    target: "1d00ffff",
+    merkle: "0000000000000000000000000000000000000000000000000000000000000000",
+    timestamp: new Date().toISOString().slice(0, 16),
+    target: "207fffff",
     nonce: "0",
   });
   const update = (key: keyof typeof fields, value: string) => setFields((current) => ({ ...current, [key]: value }));
+  const [inspection, setInspection] = useState<HeaderInspection | null>(null);
+  const [inspectionError, setInspectionError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const miner = useMiningJob();
+
+  const toHeader = (): BlockHeader => {
+    const timestamp = Math.floor(new Date(fields.timestamp).getTime() / 1000);
+    const version = Number(fields.version);
+    const bits = Number.parseInt(fields.target, 16);
+    const nonce = Number(fields.nonce);
+    if (!Number.isInteger(version) || version < -2_147_483_648 || version > 2_147_483_647) {
+      throw new Error("Version must be a signed 32-bit integer.");
+    }
+    if (!Number.isFinite(timestamp) || timestamp < 0 || timestamp > 4_294_967_295) {
+      throw new Error("Timestamp must be a valid time within the supported range.");
+    }
+    if (!Number.isInteger(bits) || bits < 0 || bits > 4_294_967_295) {
+      throw new Error("Target must be an 8-digit hexadecimal compact target.");
+    }
+    if (!Number.isInteger(nonce) || nonce < 0 || nonce > 4_294_967_295) {
+      throw new Error("Nonce must be an unsigned 32-bit integer.");
+    }
+    return {
+      version,
+      previousHash: fields.previous,
+      merkleRoot: fields.merkle,
+      timestamp,
+      bits,
+      nonce,
+    };
+  };
+
+  useEffect(() => {
+    let active = true;
+    let header: BlockHeader;
+    try {
+      header = toHeader();
+    } catch (reason) {
+      setInspection(null);
+      setInspectionError(errorMessage(reason));
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      setInspectionError("");
+      void inspectBlock(header)
+        .then((result) => {
+          if (active) setInspection(result);
+        })
+        .catch((reason: unknown) => {
+          if (active) {
+            setInspection(null);
+            setInspectionError(errorMessage(reason));
+          }
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+    }, 140);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [fields]);
+
+  const reset = () => setFields({
+    version: "1",
+    previous: "0000000000000000000000000000000000000000000000000000000000000000",
+    merkle: "0000000000000000000000000000000000000000000000000000000000000000",
+    timestamp: new Date().toISOString().slice(0, 16),
+    target: "207fffff",
+    nonce: "0",
+  });
+
+  const mineHeader = async () => {
+    setInspectionError("");
+    try {
+      const mined = await miner.start(toHeader());
+      if (mined) update("nonce", String(mined.header.nonce));
+    } catch (reason) {
+      setInspectionError(errorMessage(reason));
+    }
+  };
 
   return (
-    <LabLayout title="Block header" icon="cube" note="Explore the data committed by a block's proof of work." guidance="The header commits to its version, parent hash, Merkle root, time, target, and nonce. Changing one committed field changes the header hash." learningMode={learningMode}>
+    <LabLayout title="Block header" icon="cube" note="Explore the data committed by a block's proof of work." guidance="The header commits to its version, parent hash, Merkle root, time, target, and nonce. Changing one committed field changes the header hash. Chain-V uses the Bitcoin 80-byte header layout with an intentionally easy target limit." learningMode={learningMode} backendConnected>
       <div className="lab-two-column block-layout">
         <section className="panel lab-panel">
-          <div className="panel-title-row"><div><h3>Header fields</h3><p>Editable learning example · not validated</p></div><span className="sample-pill">EXAMPLE</span></div>
+          <div className="panel-title-row"><div><h3>Header fields</h3><p>Inputs are checked by the Rust engine.</p></div><span className="sample-pill">LOCAL MODEL</span></div>
           <div className="field-grid">
             <Field label="Version" value={fields.version} onChange={(value) => update("version", value)} />
             <Field label="Previous block hash" value={fields.previous} onChange={(value) => update("previous", value)} mono />
@@ -153,32 +357,35 @@ export function BlockLabScreen({ onNavigate, learningMode }: Props) {
             <Field label="Nonce" value={fields.nonce} onChange={(value) => update("nonce", value)} mono />
           </div>
           <div className="field-actions">
-            <button className="button button--secondary" onClick={() => setFields({ version: "1", previous: "0000000000000000000000000000000000000000000000000000000000000000", merkle: "", timestamp: "2026-10-26T12:00", target: "1d00ffff", nonce: "0" })}>
+            <button className="button button--secondary" onClick={reset}>
               <Icon name="refresh" size={15} /> Reset example
             </button>
-            <button className="button button--primary" onClick={() => onNavigate("mining")}>
-              <Icon name="pickaxe" size={15} /> Open Mining
+            <button className="button button--secondary" onClick={() => onNavigate("mining")}>Open Mining</button>
+            <button className="button button--primary" disabled={miner.mining} onClick={() => void mineHeader()}>
+              <Icon name="pickaxe" size={15} /> {miner.mining ? "Mining…" : "Mine this header"}
             </button>
           </div>
+          {miner.mining && <div className="mining-inline"><span>Searching nonce values… {miner.progress ? `${miner.progress.attempts.toLocaleString()} attempts` : ""}</span><button className="button button--secondary" onClick={() => void miner.cancel()}>Cancel</button></div>}
+          {miner.error && <p className="backend-error" role="alert">{miner.error}</p>}
         </section>
         <div className="block-derived-column">
           <section className="panel validation-panel">
             <div className="validation-heading">
-              <span className="validation-symbol validation-symbol--pending"><Icon name="clock" size={18} /></span>
-              <div><h3>Not validated</h3><p>Waiting for the Rust blockchain engine.</p></div>
+              <span className={`validation-symbol ${inspection?.meetsTarget ? "validation-symbol--valid" : inspection ? "validation-symbol--invalid" : "validation-symbol--pending"}`}><Icon name={inspection?.meetsTarget ? "check" : inspection ? "close" : "clock"} size={18} /></span>
+              <div><h3>{inspection?.meetsTarget ? "Proof of work valid" : inspection ? "Hash above target" : loading ? "Inspecting header…" : "Header unavailable"}</h3><p>{inspectionError || (inspection ? "Header hash compared numerically with its compact target." : "Rust computes the header hash and target comparison.")}</p></div>
             </div>
             <div className="derived-list">
-              <DerivedValue label="Header hash (SHA-256d)" />
-              <DerivedValue label="Target comparison" />
+              <DerivedValue label="Header hash (SHA-256d)" value={inspection?.hash ?? ""} />
+              <DerivedValue label="Target" value={inspection?.target ?? ""} />
             </div>
           </section>
           <section className="panel serialized-panel">
-            <div className="panel-title-row"><div><h3>Serialized header</h3><p>80 bytes · hexadecimal</p></div><button className="icon-button" aria-label="Copy serialized header" disabled><Icon name="copy" size={15} /></button></div>
-            <code className="serialized-empty">Serialization will appear here when connected.</code>
+            <div className="panel-title-row"><div><h3>Serialized header</h3><p>80 bytes · hexadecimal</p></div><CopyValue value={inspection?.serializedHeader ?? ""} label="serialized header" /></div>
+            <code className="serialized-empty">{inspection?.serializedHeader ?? (inspectionError || "Waiting for valid header fields…")}</code>
           </section>
           <div className="notice notice--info">
             <Icon name="info" size={16} />
-            <p>Changing a committed field changes the header hash. Proof of work uses a numeric target, not a prefix check.</p>
+            <p>Changing a committed field changes the Rust-calculated hash. Proof of work is an unsigned numeric comparison, not a prefix check.</p>
           </div>
         </div>
       </div>
@@ -217,50 +424,86 @@ function Field({
   );
 }
 
-function DerivedValue({ label }: { label: string }) {
+function DerivedValue({ label, value }: { label: string; value: string }) {
   return (
     <div className="derived-value">
       <span>{label}</span>
-      <code>Available after backend integration</code>
+      <code>{value || "Not available"}</code>
     </div>
   );
 }
 
-export function MiningScreen({ onNavigate, learningMode }: Props) {
+function CopyValue({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState("");
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setCopyError("");
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch (reason) {
+      setCopied(false);
+      setCopyError(errorMessage(reason));
+    }
+  };
   return (
-    <LabLayout title="Proof of work" icon="pickaxe" note="Search for a header hash that meets its target." guidance="Mining tries different nonce values until the header hash is numerically at or below the target. This prototype will use a deliberately easy local target." learningMode={learningMode}>
+    <>
+      <button className="icon-button" aria-label={`Copy ${label}`} disabled={!value} onClick={() => void copy()}><Icon name={copied ? "check" : "copy"} size={15} /></button>
+      {copied && <span className="sr-only" role="status">{label} copied</span>}
+      {copyError && <span className="copy-error" role="alert">Could not copy: {copyError}</span>}
+    </>
+  );
+}
+
+export function MiningScreen({ onNavigate, learningMode }: Props) {
+  const miner = useMiningJob();
+  const miningTarget = "0000ffff00000000000000000000000000000000000000000000000000000000";
+  const [header] = useState<BlockHeader>(() => ({
+    version: 1,
+    previousHash: "0000000000000000000000000000000000000000000000000000000000000000",
+    merkleRoot: "0000000000000000000000000000000000000000000000000000000000000000",
+    timestamp: Math.floor(Date.now() / 1000),
+    bits: 0x1f00ffff,
+    nonce: 0,
+  }));
+  const start = () => void miner.start(header);
+
+  return (
+    <LabLayout title="Proof of work" icon="pickaxe" note="Search for a header hash that meets its target." guidance="Mining tries different nonce values until the header hash is numerically at or below the target. Rust performs the search and reports bounded progress. This is not Bitcoin network mining." learningMode={learningMode} backendConnected>
       <div className="mining-grid">
         <section className="panel mining-panel">
-          <div className="panel-title-row"><div><h3>Mining run</h3><p>Low-difficulty local learning exercise</p></div><span className="pending-pill"><span className="pending-dot" />Not started</span></div>
+          <div className="panel-title-row"><div><h3>Mining run</h3><p>Standalone empty genesis-style header · target 0x1f00ffff</p></div><span className={`pending-pill${miner.result ? " status-pill--success" : miner.error ? " status-pill--error" : ""}`}><span className="pending-dot" />{miner.mining ? "Mining" : miner.result ? "Found" : miner.error ? "Stopped" : "Ready"}</span></div>
           <div className="mining-status">
             <div className="mining-orb"><Icon name="cpu" size={25} /></div>
-            <div><h3>Ready when the Rust miner is connected</h3><p>The frontend will show search progress and allow cancellation here.</p></div>
+            <div><h3>{miner.mining ? "Searching for a valid nonce" : miner.result ? "Proof of work found" : "Ready to mine locally"}</h3><p>{miner.mining && miner.progress ? `Latest nonce ${miner.progress.currentNonce.toLocaleString()} · ${miner.progress.currentHash}` : miner.result ? `Nonce ${miner.result.header.nonce.toLocaleString()} meets the target.` : "Rust searches the header nonce field using an intentionally easy learning target."}</p></div>
           </div>
           <div className="mining-stats">
-            <Metric label="Attempts" value="—" />
-            <Metric label="Hash rate" value="—" />
-            <Metric label="Elapsed" value="—" />
+            <Metric label="Attempts" value={miner.result?.attempts.toLocaleString() ?? miner.progress?.attempts.toLocaleString() ?? "—"} />
+            <Metric label="Hash rate" value={miner.progress ? `${Math.round(miner.progress.hashRate).toLocaleString()} H/s` : miner.result ? `${Math.round(miner.result.attempts / Math.max(miner.result.elapsedMilliseconds / 1000, 0.001)).toLocaleString()} H/s` : "—"} />
+            <Metric label="Elapsed" value={miner.result ? `${(miner.result.elapsedMilliseconds / 1000).toFixed(2)} s` : miner.progress ? `${(miner.progress.elapsedMilliseconds / 1000).toFixed(2)} s` : "—"} />
           </div>
-          <button className="button button--primary mining-cta" disabled title="Mining requires the Rust backend">
-            <Icon name="play" size={15} /> Start mining
+          <button className="button button--primary mining-cta" disabled={miner.mining} onClick={start}>
+            <Icon name="play" size={15} /> {miner.mining ? "Mining…" : miner.result ? "Mine again" : "Start mining"}
           </button>
-          <button className="button button--secondary mining-cancel" disabled>Cancel</button>
+          <button className="button button--secondary mining-cancel" disabled={!miner.mining} onClick={() => void miner.cancel()}>Cancel</button>
+          {miner.error && <p className="backend-error" role="alert">{miner.error}</p>}
         </section>
         <section className="panel mining-chart-panel">
           <div className="panel-title-row"><div><h3>Hash rate</h3><p>Attempts per second during this run</p></div><span className="unit-pill">hashes/sec</span></div>
           <div className="chart-placeholder">
             <div className="chart-grid-lines"><span /><span /><span /><span /></div>
-            <div className="chart-empty"><span className="chart-empty-icon"><Icon name="cpu" size={20} /></span><strong>No mining data yet</strong><small>Start a run to see local progress.</small></div>
+            <div className="chart-empty"><span className="chart-empty-icon"><Icon name="cpu" size={20} /></span><strong>{miner.progress ? `${Math.round(miner.progress.hashRate).toLocaleString()} hashes/sec` : miner.result ? "Mining complete" : "Progress updates appear here"}</strong><small>{miner.progress ? `${miner.progress.attempts.toLocaleString()} attempts checked` : miner.result ? `${miner.result.attempts.toLocaleString()} attempts · ${miner.result.elapsedMilliseconds.toFixed(2)} ms` : "Updates are sent periodically by Rust, not for every nonce."}</small></div>
           </div>
           <div className="target-comparison">
-            <Metric label="Current hash" value="—" mono />
-            <Metric label="Target" value="—" mono />
+            <Metric label="Current / found hash" value={miner.result?.hash ?? miner.progress?.currentHash ?? "—"} mono />
+            <Metric label="Target" value={miner.result?.target ?? miningTarget} mono />
           </div>
         </section>
       </div>
       <div className="notice notice--warning mining-warning">
         <Icon name="info" size={16} />
-        <p><strong>Learning difficulty only.</strong> This app uses an intentionally easy target for local demonstrations. It is not Bitcoin network mining and does not estimate a completion percentage.</p>
+        <p><strong>Learning difficulty only.</strong> This run uses target 0x1f00ffff and is capped at two million nonce attempts. Rust also rejects targets easier than 0x207fffff. This is not Bitcoin network mining and does not estimate a completion percentage.</p>
       </div>
       <button className="text-button mining-back-link" onClick={() => onNavigate("block")}>Return to Block Lab <Icon name="arrow-right" size={14} /></button>
     </LabLayout>
@@ -272,42 +515,143 @@ function Metric({ label, value, mono = false }: { label: string; value: string; 
 }
 
 export function ChainLabScreen({ onNavigate, learningMode }: Props) {
-  const [blockCount, setBlockCount] = useState(3);
-  const [selectedBlock, setSelectedBlock] = useState<number | null>(null);
+  const [headers, setHeaders] = useState<BlockHeader[]>([]);
+  const [validation, setValidation] = useState<ChainValidation | null>(null);
+  const [selectedBlock, setSelectedBlock] = useState<number | null>(0);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadExample = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const demo = await createDemoChain();
+      const result = await validateChain(demo);
+      setHeaders(demo);
+      setValidation(result);
+      setSelectedBlock(0);
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadExample();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (headers.length === 0) {
+      setValidation(null);
+      return;
+    }
+    void validateChain(headers)
+      .then((result) => {
+        if (active) setValidation(result);
+      })
+      .catch((reason: unknown) => {
+        if (active) setError(errorMessage(reason));
+      });
+    return () => {
+      active = false;
+    };
+  }, [headers]);
+
+  const editSelectedNonce = () => {
+    if (selectedBlock === null) return;
+    setHeaders((current) => current.map((header, index) =>
+      index === selectedBlock ? { ...header, nonce: header.nonce + 1 } : header,
+    ));
+  };
+
+  const mineFromSelection = async () => {
+    if (selectedBlock === null || headers[selectedBlock] === undefined) return;
+    setBusy(true);
+    setError("");
+    try {
+      const next = [...headers];
+      let previousHash = selectedBlock === 0
+        ? "0000000000000000000000000000000000000000000000000000000000000000"
+        : validation?.blocks[selectedBlock - 1]?.hash;
+      if (!previousHash) throw new Error("The preceding block has no usable hash.");
+      for (let index = selectedBlock; index < next.length; index += 1) {
+        const current = next[index];
+        if (!current) continue;
+        const header = { ...current, previousHash, nonce: 0 };
+        const mined = await mineBlock(crypto.randomUUID(), header, 2_000_000, () => {});
+        next[index] = mined.header;
+        previousHash = mined.hash;
+      }
+      setHeaders(next);
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addBlock = async () => {
+    const tip = headers[headers.length - 1];
+    const parentHash = validation?.blocks[validation.blocks.length - 1]?.hash;
+    if (!tip || !parentHash) return;
+    setBusy(true);
+    setError("");
+    try {
+      const mined = await mineBlock(crypto.randomUUID(), {
+        ...tip,
+        previousHash: parentHash,
+        timestamp: tip.timestamp + 1,
+        nonce: 0,
+      }, 2_000_000, () => {});
+      setHeaders((current) => [...current, mined.header]);
+      setSelectedBlock(headers.length);
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <LabLayout title="Linked blocks" icon="chain" note="A block commits to its parent using the previous header hash." guidance="Each block points to its parent by storing that parent's hash. Changing an earlier block breaks the later link unless descendants are updated and revalidated." learningMode={learningMode}>
+    <LabLayout title="Linked blocks" icon="chain" note="A block commits to its parent using the previous header hash." guidance="Each block points to its parent by storing that parent's hash. Changing an earlier block breaks the later link unless descendants are updated and re-mined in sequence." learningMode={learningMode} backendConnected>
       <div className="chain-toolbar">
-        <div><span className="sample-pill">ILLUSTRATIVE CHAIN</span><span className="chain-count">{blockCount} blocks · sample data only</span></div>
+        <div><span className={`sample-pill${validation?.valid ? " status-pill--success" : ""}`}>{validation?.valid ? "VALID HEADER CHAIN" : "RUST VALIDATION"}</span><span className="chain-count">{headers.length} blocks · header proof-of-work only</span></div>
         <div className="toolbar-actions">
-          <button className="button button--secondary" onClick={() => setBlockCount(3)}><Icon name="refresh" size={15} /> Reset example</button>
-          <button className="button button--primary" onClick={() => setBlockCount((count) => count + 1)}><Icon name="plus" size={15} /> Add Block</button>
+          <button className="button button--secondary" disabled={busy || loading} onClick={() => void loadExample()}><Icon name="refresh" size={15} /> Reset example</button>
+          <button className="button button--primary" disabled={busy || loading || !validation?.valid} onClick={() => void addBlock()}><Icon name="plus" size={15} /> Add Block</button>
         </div>
       </div>
+      {error && <p className="backend-error" role="alert">{error}</p>}
       <div className="chain-list">
-        {Array.from({ length: blockCount }, (_, index) => {
+        {loading && <div className="panel lab-panel" role="status">Creating and mining a three-block example in Rust…</div>}
+        {!loading && headers.map((header, index) => {
           const height = index;
           const isSelected = selectedBlock === height;
+          const entry = validation?.blocks[height];
           return (
             <article className={`chain-card${isSelected ? " chain-card--selected" : ""}`} key={height}>
               <div className="chain-card-index"><span>{height === 0 ? "G" : height}</span><small>{height === 0 ? "GENESIS" : `BLOCK ${height}`}</small></div>
               <div className="chain-card-body">
-                <div className="chain-card-heading"><h3>{height === 0 ? "Genesis block" : `Block #${height}`}</h3><span className="pending-pill"><span className="pending-dot" />Not validated</span></div>
+                <div className="chain-card-heading"><h3>{height === 0 ? "Genesis block" : `Block #${height}`}</h3><span className={`pending-pill${entry?.valid ? " status-pill--success" : entry ? " status-pill--error" : ""}`}><span className="pending-dot" />{entry?.valid ? "Valid" : entry ? "Invalid" : "Checking"}</span></div>
                 <div className="chain-hashes">
-                  <span>Hash <code>Awaiting Rust</code></span>
-                  <span>Previous <code>{height === 0 ? "Zero hash (genesis)" : "Awaiting parent hash"}</code></span>
+                  <span>Hash <code>{entry?.hash ?? "Unavailable"}</code></span>
+                  <span>Previous <code>{header.previousHash}</code></span>
                 </div>
               </div>
               <div className="chain-card-actions">
                 <button className="icon-button" aria-label={`Inspect block ${height}`} onClick={() => setSelectedBlock(isSelected ? null : height)}><Icon name="edit" size={15} /></button>
               </div>
-              {isSelected && <div className="chain-inline-detail"><Icon name="info" size={15} /><span>Block fields and validation details will be loaded from the Rust engine.</span><button className="text-button" onClick={() => onNavigate("block")}>Open Block Lab</button></div>}
+              {isSelected && <div className="chain-inline-detail"><Icon name="info" size={15} /><span>{entry?.reasons.join(" ") || `Nonce ${header.nonce}; compact target 0x${header.bits.toString(16).padStart(8, "0")}.`}</span><button className="text-button" onClick={editSelectedNonce} disabled={busy}>Change nonce</button><button className="text-button" onClick={() => void mineFromSelection()} disabled={busy}>{busy ? "Mining…" : "Re-mine this block and descendants"}</button><button className="text-button" onClick={() => onNavigate("block")}>Open Block Lab</button></div>}
             </article>
           );
         })}
       </div>
       <div className="notice notice--warning">
         <Icon name="info" size={16} />
-        <p>Editing a block changes its hash and invalidates later links. Each affected descendant must be revalidated and may need to be re-mined in order.</p>
+        <p>Editing a block changes its hash and invalidates its proof of work. Descendants must then point to the changed parent hash and be re-mined in order. This example validates headers only; it has no transactions or network consensus.</p>
       </div>
     </LabLayout>
   );
@@ -345,7 +689,7 @@ export function TransactionsScreen({ learningMode }: ModeProps) {
     setTab(nextTab.id);
   };
   return (
-    <LabLayout title="Transactions & rewards" icon="arrows" note="Explore how outputs are created, spent, and committed to a block." guidance="Transactions spend specific unspent outputs and create new outputs. Their identifiers are paired and hashed into a Merkle root committed by a block header." learningMode={learningMode}>
+    <LabLayout title="Transactions & rewards" icon="arrows" note="Explore how outputs are created, spent, and committed to a block." guidance="Transactions spend specific unspent outputs and create new outputs. Their identifiers are paired and hashed into a Merkle root committed by a block header." learningMode={learningMode} backendConnected backendMessage="Merkle roots are calculated in Rust. Transaction creation, UTXO state, signatures, and transaction validation are not implemented yet.">
       <div className="tab-list" role="tablist" aria-label="Transaction learning views" onKeyDown={handleTabKeyDown}>
         {tabs.map((item) => (
           <button
@@ -434,17 +778,32 @@ function UtxoView() {
 }
 
 function MerkleView() {
+  const [ids, setIds] = useState(`${"11".repeat(32)}\n${"22".repeat(32)}\n${"33".repeat(32)}`);
+  const [root, setRoot] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const calculate = async () => {
+    setLoading(true);
+    setError("");
+    setRoot("");
+    try {
+      const transactionIds = ids.split(/\s+/).map((id) => id.trim()).filter(Boolean);
+      setRoot(await calculateMerkleRoot(transactionIds));
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  };
   return (
     <section className="panel lab-panel merkle-panel">
-      <div className="panel-title-row"><div><h3>Merkle tree</h3><p>Transaction IDs are paired and hashed until one root remains.</p></div><span className="sample-pill">AWAITING DATA</span></div>
-      <div className="merkle-placeholder" aria-label="Merkle tree visualization will appear after backend integration">
-        <div className="merkle-node merkle-node--root">Merkle root · not calculated</div>
-        <div className="merkle-branches"><span /><span /></div>
-        <div className="merkle-node-row"><div className="merkle-node">Parent hash · pending</div><div className="merkle-node">Parent hash · pending</div></div>
-        <div className="merkle-branches merkle-branches--leaves"><span /><span /><span /><span /></div>
-        <div className="merkle-node-row merkle-node-row--leaves"><div className="merkle-node">Tx A</div><div className="merkle-node">Tx B</div><div className="merkle-node">Tx C</div><div className="merkle-node">Tx D</div></div>
-      </div>
-      <p className="merkle-caption">Tree structure is illustrative only. Hash values and the root will come from Rust.</p>
+      <div className="panel-title-row"><div><h3>Merkle root calculator</h3><p>Enter one 64-character transaction ID per line. An odd final leaf is duplicated.</p></div><span className="sample-pill">RUST</span></div>
+      <label className="field-label" htmlFor="merkle-ids">Displayed transaction IDs</label>
+      <textarea id="merkle-ids" className="text-area text-area--mono" rows={4} value={ids} onChange={(event) => setIds(event.target.value)} />
+      <div className="toolbar-actions merkle-actions"><button className="button button--primary" disabled={loading} onClick={() => void calculate()}>{loading ? "Calculating…" : "Calculate Merkle root"}</button></div>
+      {error && <p className="backend-error" role="alert">{error}</p>}
+      {root && <div className="derived-value merkle-root-result"><span>Computed Merkle root · returned by Rust</span><code>{root}</code><CopyValue value={root} label="Merkle root" /></div>}
+      <p className="merkle-caption">The calculation uses double SHA-256 over transaction ID pairs. This does not imply the supplied IDs correspond to validated transactions.</p>
     </section>
   );
 }

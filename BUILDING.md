@@ -29,7 +29,7 @@ An initial, editable visual reference for these choices is in [`design/color-con
 
 ## Current project baseline
 
-The app uses Tauri 2 + React 19 + TypeScript + Vite. Its initial frontend prototype provides onboarding, themes, the learning workspace, lab surfaces, and local experiment metadata; the Rust crate still exposes only the template `greet` command. There is no blockchain domain model or Rust-owned experiment storage yet. Keep the implementation aligned with this existing stack rather than introducing another frontend framework. See [`FRONTEND.md`](FRONTEND.md) for the frontend design and implementation requirements.
+The app uses Tauri 2 + React 19 + TypeScript + Vite. Onboarding, themes, the learning workspace, native shell, and generic compute settings are in place. The Hash, Block, Mining, Chain, and Merkle-root lessons now call the Rust domain through typed Tauri commands. Experiment metadata remains in browser storage, while transactions, UTXOs, persistence, real peer simulation, and network consensus are not implemented. See [`FRONTEND.md`](FRONTEND.md) for the frontend design and implementation requirements.
 
 ## What the reference teaches
 
@@ -110,7 +110,7 @@ src-tauri/src/
   persistence/          documented future repository and migration modules
 ```
 
-The Rust directories and module files now exist as documented scaffolds. They intentionally contain no blockchain data types, algorithms, validation rules, mining, database schema, or use cases. Their module-level Rust documentation describes ownership, dependencies, and the future integration path. Implement them incrementally as part of the learning work rather than treating the placeholders as functioning features.
+The Rust domain now implements SHA-256/SHA-256d, Bitcoin-layout header serialization and hashing, compact-target checks bounded by `0x207fffff`, proof-of-work validation, cancellable bounded nonce search, linked header-chain validation, and Merkle roots over displayed transaction IDs. Application use cases and Tauri commands expose those operations to the frontend, including progress channels for mining. The block/chain lessons are header-only: they do not validate transactions, UTXO state, full Bitcoin consensus, or network peers. Persistence remains a documented future boundary.
 
 Keep the dependency direction explicit: `domain` is pure Rust and depends on no app infrastructure; `application` coordinates domain operations and narrow infrastructure interfaces; Tauri commands are the IPC boundary; persistence and GPU/window/system services remain infrastructure. The frontend should receive typed command results and must not become the source of truth for blockchain state.
 
@@ -125,6 +125,16 @@ The Tauri shell now exposes three infrastructure areas without implementing any 
 The app now hides the separate window-manager title bar and renders a compact theme-aware title bar as part of the interface. Its draggable region and minimize, maximize/restore, and close controls use the Tauri window command boundary; Tauri's drag-region handling toggles maximize on double-click. The window's OS-level title remains set for task switchers and accessibility. The controls are generic desktop controls, not macOS traffic lights.
 
 These services do not grant shell execution, elevated privileges, arbitrary filesystem access, or access to blockchain state. Keep domain models, validation, hashing, mining, and consensus in separate Rust modules owned by the learner.
+
+### Implemented Rust learning core
+
+- **Hashing:** Rust returns SHA-256 and Bitcoin-style displayed SHA-256d values for arbitrary UTF-8 input.
+- **Headers and proof of work:** Rust serializes the 80-byte header, validates its hash fields and compact target, computes its SHA-256d hash, and compares that hash numerically with the target. `0x207fffff` is the easiest permitted target; the standalone Mining lesson uses `0x1f00ffff` so progress and cancellation can be observed.
+- **Mining:** A bounded Rust worker searches nonce values off the UI thread, streams periodic progress over a Tauri channel, and supports cancellation. Each request is capped at ten million attempts in Rust; the UI currently requests at most two million.
+- **Header chains:** Rust validates each header's proof of work and parent hash link, and returns per-height reasons. The demo chain is generated and mined in Rust. It contains empty Merkle roots and no transactions.
+- **Merkle roots:** Rust decodes displayed transaction IDs, double-hashes pairs, duplicates an unpaired final node, and returns the resulting displayed root. Supplied IDs are not independently validated as transaction IDs.
+
+The UI presents explicit unavailable/error states for operations it cannot complete. Transaction construction and validation, signatures, UTXO sets, Rust-owned experiment persistence, and distributed peer/fork simulation are still incomplete; the corresponding screens remain clearly marked as prototypes or data-unavailable views.
 
 ### Persistence
 
