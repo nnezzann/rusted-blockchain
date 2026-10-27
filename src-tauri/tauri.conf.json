@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Learning Blockchain",
+  "productName": "Chain-V",
   "version": "0.1.0",
-  "identifier": "com.nnezzann.rusted-blockchain",
+  "identifier": "com.nnezzann.chain-v",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Learning Blockchain",
+        "title": "Chain-V",
         "width": 1280,
         "height": 850,
         "minWidth": 1000,

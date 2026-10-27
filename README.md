@@ -1,6 +1,6 @@
-# Learning Blockchain
+# Chain-V
 
-Learning Blockchain is a local-first desktop app for exploring how Bitcoin-like blockchain mechanisms fit together. It is designed as a set of small, visual experiments: change data, inspect the resulting state, and learn why blocks and transactions are accepted or rejected.
+Chain-V is a local-first desktop app for exploring how Bitcoin-like blockchain mechanisms fit together. It is designed as a set of small, visual experiments: change data, inspect the resulting state, and learn why blocks and transactions are accepted or rejected.
 
 The project is intentionally educational. It is **not** a Bitcoin node, wallet, network client, or Bitcoin-compatible implementation. It does not handle real funds, connect to peers, or implement production security.
 
@@ -19,7 +19,7 @@ The Rust blockchain domain is deliberately left for implementation. Documented m
 ## Architecture
 
 ```text
-React + TypeScript frontend
+Chain-V · React + TypeScript frontend
   navigation, forms, themes, and learning visualizations
                 │ typed Tauri invoke calls
                 ▼

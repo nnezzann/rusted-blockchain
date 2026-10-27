@@ -48,7 +48,7 @@ const workItems: NavigationItem[] = [
 
 const screenTitles: Record<ScreenId, { title: string; description: string }> = {
   home: {
-    title: "Welcome to Learning Blockchain",
+    title: "Welcome to Chain-V",
     description: "Explore how Bitcoin works — one small experiment at a time.",
   },
   hash: {
@@ -201,7 +201,7 @@ function App() {
           <span className="brand-mark" aria-hidden="true">
             <Icon name="cube" size={18} />
           </span>
-          <span className="brand-name">Learning Blockchain</span>
+          <span className="brand-name">Chain-V</span>
         </div>
         <nav className="sidebar-nav" aria-label="Main navigation">
           <NavGroup
@@ -248,7 +248,7 @@ function App() {
             <span className="brand-mark" aria-hidden="true">
               <Icon name="cube" size={18} />
             </span>
-            <span className="brand-name">Learning Blockchain</span>
+            <span className="brand-name">Chain-V</span>
           </div>
           <button
             className="icon-button"
@@ -345,7 +345,7 @@ function WindowTitlebar() {
         </span>
       </div>
       <span className="window-titlebar-title" role={controlError ? "status" : undefined} title={controlError || undefined}>
-        {controlError || "Learning Blockchain"}
+        {controlError || "Chain-V"}
       </span>
       <div className="window-titlebar-controls">
         <button className="window-control" aria-label="Minimize window" title="Minimize" onClick={() => void runWindowAction("minimize")}>

@@ -154,7 +154,7 @@ function WelcomeStep() {
       <div className="welcome-hero">
         <div className="welcome-hero-copy">
           <p className="eyebrow">WELCOME TO</p>
-          <h1>Learning <span>Blockchain</span></h1>
+          <h1><span>Chain-V</span></h1>
           <p className="welcome-description">
             A hands-on, visual way to explore how Bitcoin works — from hashing and
             blocks to transactions and proof-of-work. Built for curious minds,

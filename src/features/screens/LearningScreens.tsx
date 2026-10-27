@@ -705,7 +705,7 @@ export function SettingsDetails({
   return (
     <div className="settings-layout">
       <section className="panel settings-panel">
-        <div className="panel-heading"><span className="panel-icon"><Icon name="sun" /></span><div><h2>Appearance</h2><p>Choose how Learning Blockchain looks.</p></div></div>
+        <div className="panel-heading"><span className="panel-icon"><Icon name="sun" /></span><div><h2>Appearance</h2><p>Choose how Chain-V looks.</p></div></div>
         <fieldset className="choice-row">
           <legend className="sr-only">Choose appearance</legend>
           {(["system", "light", "dark"] as const).map((option) => (

@@ -69,7 +69,7 @@ impl ComputeRuntime {
                 let (device, queue) = adapter
                     .request_device(
                         &wgpu::DeviceDescriptor {
-                            label: Some("Learning Blockchain compute device"),
+                            label: Some("Chain-V compute device"),
                             ..Default::default()
                         },
                         None,

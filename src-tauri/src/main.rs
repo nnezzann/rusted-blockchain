@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    rusted_blockchain_lib::run()
+    chain_v_lib::run()
 }

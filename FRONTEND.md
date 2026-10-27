@@ -1,6 +1,6 @@
 # Frontend implementation guide
 
-This document is the working specification for the complete desktop frontend of the Learning Blockchain app. It is written for an implementation agent who has not seen the earlier design discussion. Read it together with [`BUILDING.md`](BUILDING.md), which is the source of truth for blockchain concepts, validation, and the Rust architecture.
+This document is the working specification for the complete desktop frontend of Chain-V. It is written for an implementation agent who has not seen the earlier design discussion. Read it together with [`BUILDING.md`](BUILDING.md), which is the source of truth for blockchain concepts, validation, and the Rust architecture.
 
 ## 1. Product and implementation context
 
@@ -114,7 +114,7 @@ Once onboarding is complete, normal app launches should open the last useful wor
 
 Use a fixed-width sidebar on desktop, visually distinct from the main canvas. It contains:
 
-- App mark and **Learning Blockchain** name.
+- App mark and **Chain-V** name.
 - **Learn** group:
   - Home
   - Hash Lab
@@ -150,7 +150,7 @@ Implement the four-step wizard from the **Welcome Screen** reference. It is an i
 Use the image's hierarchy:
 
 - Eyebrow: “WELCOME TO”.
-- Main heading: “Learning Blockchain”, with “Blockchain” in amber accent.
+- Main heading: “Chain-V”, preceded by the “WELCOME TO” eyebrow; render “Chain-V” in amber accent.
 - Plain-language description: “A hands-on, visual way to explore how Bitcoin works — from hashing and blocks to transactions and proof-of-work. Built for curious minds, designed for real understanding.”
 - Four benefit cards:
   - **Learn by Doing** — interactive labs and visual explanations.

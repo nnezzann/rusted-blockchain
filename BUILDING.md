@@ -1,4 +1,4 @@
-# Building the learning blockchain app
+# Building Chain-V
 
 ## Purpose
 
