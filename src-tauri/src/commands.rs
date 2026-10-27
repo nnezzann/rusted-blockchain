@@ -75,6 +75,20 @@ pub fn inspect_block(header: BlockHeader) -> Result<HeaderInspection, String> {
 }
 
 #[tauri::command]
+pub fn inspect_data_block(
+    header: BlockHeader,
+    data: String,
+    leading_zero_nibbles: u8,
+) -> Result<HeaderInspection, String> {
+    blocks::inspect_data(&header, &data, leading_zero_nibbles)
+}
+
+#[tauri::command]
+pub fn commit_block_data(header: BlockHeader, data: String) -> Result<BlockHeader, String> {
+    blocks::commit_data(&header, &data)
+}
+
+#[tauri::command]
 pub fn validate_chain(headers: Vec<BlockHeader>) -> ChainValidation {
     blocks::validate_chain(&headers)
 }
@@ -120,6 +134,69 @@ pub async fn mine_block(
                 worker_cancelled.store(true, Ordering::Relaxed);
             }
         })
+    })
+    .await
+    .map_err(|error| format!("Mining worker failed: {error}"));
+
+    runtime
+        .jobs
+        .lock()
+        .map_err(|_| "Mining job registry is unavailable.".to_string())?
+        .remove(&job_id);
+    result?
+}
+
+#[tauri::command]
+pub async fn mine_data_block(
+    runtime: State<'_, MiningRuntime>,
+    job_id: String,
+    header: BlockHeader,
+    data: String,
+    leading_zero_nibbles: u8,
+    max_attempts: u64,
+    on_progress: Channel<MiningProgress>,
+) -> Result<MiningResult, String> {
+    if job_id.is_empty() || job_id.len() > 64 {
+        return Err("Mining job ID must contain between 1 and 64 characters.".into());
+    }
+    if max_attempts == 0 || max_attempts > MAX_MINING_ATTEMPTS {
+        return Err(format!(
+            "Mining attempts must be between 1 and {MAX_MINING_ATTEMPTS}."
+        ));
+    }
+    if leading_zero_nibbles > crate::domain::mining::MAX_LEADING_ZERO_NIBBLES {
+        return Err(format!(
+            "Leading-zero difficulty must be between 0 and {} hexadecimal zeroes.",
+            crate::domain::mining::MAX_LEADING_ZERO_NIBBLES
+        ));
+    }
+
+    let cancelled = Arc::new(AtomicBool::new(false));
+    {
+        let mut jobs = runtime
+            .jobs
+            .lock()
+            .map_err(|_| "Mining job registry is unavailable.".to_string())?;
+        if jobs.contains_key(&job_id) {
+            return Err("A mining job with this ID is already running.".into());
+        }
+        jobs.insert(job_id.clone(), cancelled.clone());
+    }
+
+    let worker_cancelled = cancelled.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        mining::mine_header_with_data(
+            header,
+            &data,
+            leading_zero_nibbles,
+            max_attempts,
+            worker_cancelled.clone(),
+            |progress| {
+                if on_progress.send(progress).is_err() {
+                    worker_cancelled.store(true, Ordering::Relaxed);
+                }
+            },
+        )
     })
     .await
     .map_err(|error| format!("Mining worker failed: {error}"));
@@ -238,10 +315,34 @@ pub fn remove_peer(
 pub fn mine_peer_block(
     runtime: State<'_, PeerRuntime>,
     peer_id: String,
+    leading_zero_nibbles: u8,
 ) -> Result<PeerView, String> {
     let mut network = runtime.lock()?;
-    network.mine_next(&peer_id)?;
+    network.mine_next(&peer_id, leading_zero_nibbles)?;
     network.view(&peer_id)
+}
+
+#[tauri::command]
+pub fn edit_peer_block(
+    runtime: State<'_, PeerRuntime>,
+    peer_id: String,
+    height: usize,
+    header: BlockHeader,
+    data: String,
+) -> Result<PeerView, String> {
+    runtime.lock()?.edit_block(&peer_id, height, header, data)
+}
+
+#[tauri::command]
+pub fn remine_peer_chain(
+    runtime: State<'_, PeerRuntime>,
+    peer_id: String,
+    height: usize,
+    leading_zero_nibbles: u8,
+) -> Result<PeerView, String> {
+    runtime
+        .lock()?
+        .remine_from(&peer_id, height, leading_zero_nibbles)
 }
 
 #[tauri::command]

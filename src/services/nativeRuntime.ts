@@ -66,6 +66,9 @@ export type HeaderInspection = {
   serializedHeader: string;
   target: string;
   meetsTarget: boolean;
+  merkleRoot: string;
+  leadingZeroesRequired: number | null;
+  meetsLeadingZeroes: boolean | null;
 };
 
 export type ChainEntry = {
@@ -129,7 +132,9 @@ export type PeerView = {
   name: string;
   chainName: string;
   headers: BlockHeader[];
-  hashes: string[];
+  payloads: string[];
+  baseMerkleRoots: string[];
+  hashes: (string | null)[];
   height: number;
   tipHash: string;
   cumulativeWork: number;
@@ -162,6 +167,10 @@ export type MiningProgressHandler = (progress: MiningProgress) => void;
 export const hashInput = (input: string) => invoke<HashResult>("hash_input", { input });
 export const inspectBlock = (header: BlockHeader) =>
   invoke<HeaderInspection>("inspect_block", { header });
+export const inspectDataBlock = (header: BlockHeader, data: string, leadingZeroNibbles: number) =>
+  invoke<HeaderInspection>("inspect_data_block", { header, data, leadingZeroNibbles });
+export const commitBlockData = (header: BlockHeader, data: string) =>
+  invoke<BlockHeader>("commit_block_data", { header, data });
 export const createDemoChain = () => invoke<BlockHeader[]>("create_demo_chain");
 export const validateChain = (headers: BlockHeader[]) =>
   invoke<ChainValidation>("validate_chain", { headers });
@@ -174,8 +183,12 @@ export const createPeer = (name: string, copyFromId: string) =>
   invoke<PeerView>("create_peer", { name, copyFromId });
 export const removePeer = (peerId: string) =>
   invoke<PeerView[]>("remove_peer", { peerId });
-export const minePeerBlock = (peerId: string) =>
-  invoke<PeerView>("mine_peer_block", { peerId });
+export const minePeerBlock = (peerId: string, leadingZeroNibbles: number) =>
+  invoke<PeerView>("mine_peer_block", { peerId, leadingZeroNibbles });
+export const editPeerBlock = (peerId: string, height: number, header: BlockHeader, data: string) =>
+  invoke<PeerView>("edit_peer_block", { peerId, height, header, data });
+export const reminePeerChain = (peerId: string, height: number, leadingZeroNibbles: number) =>
+  invoke<PeerView>("remine_peer_chain", { peerId, height, leadingZeroNibbles });
 export const comparePeerChains = (leftId: string, rightId: string) =>
   invoke<PeerComparison>("compare_peer_chains", { leftId, rightId });
 export const propagatePeerChain = (sourceId: string, destinationId: string) =>
@@ -192,6 +205,26 @@ export function mineBlock(
   return invoke<MiningResult>("mine_block", {
     jobId,
     header,
+    maxAttempts,
+    onProgress: channel,
+  });
+}
+
+export function mineDataBlock(
+  jobId: string,
+  header: BlockHeader,
+  data: string,
+  leadingZeroNibbles: number,
+  maxAttempts: number,
+  onProgress: MiningProgressHandler,
+): Promise<MiningResult> {
+  const channel = new Channel<MiningProgress>();
+  channel.onmessage = onProgress;
+  return invoke<MiningResult>("mine_data_block", {
+    jobId,
+    header,
+    data,
+    leadingZeroNibbles,
     maxAttempts,
     onProgress: channel,
   });

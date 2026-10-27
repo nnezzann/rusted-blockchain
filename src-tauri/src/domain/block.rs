@@ -11,6 +11,21 @@ use super::hash::{display_hash, parse_display_hash, sha256d};
 
 pub const ZERO_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 pub const EASY_LEARNING_BITS: u32 = 0x207f_ffff;
+pub const MAX_LEARNING_DATA_BYTES: usize = 64 * 1024;
+
+pub fn commit_data(header: &BlockHeader, data: &str) -> Result<BlockHeader, String> {
+    if data.len() > MAX_LEARNING_DATA_BYTES {
+        return Err(format!(
+            "Block data must not exceed {MAX_LEARNING_DATA_BYTES} UTF-8 bytes."
+        ));
+    }
+    let mut committed = header.clone();
+    if !data.is_empty() {
+        let data_id = display_hash(&sha256d(data.as_bytes()));
+        committed.merkle_root = super::merkle::root(&[committed.merkle_root.clone(), data_id])?;
+    }
+    Ok(committed)
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -100,5 +115,30 @@ mod tests {
                 .unwrap_err()
                 .contains("Previous block hash")
         );
+    }
+
+    #[test]
+    fn arbitrary_payload_is_committed_through_the_merkle_root() {
+        let header = sample();
+        let first = commit_data(&header, "hello").unwrap();
+        let same = commit_data(&header, "hello").unwrap();
+        let changed = commit_data(&header, "hello!").unwrap();
+
+        assert_eq!(first, same);
+        assert_ne!(first.merkle_root, changed.merkle_root);
+        assert_eq!(header.merkle_root, ZERO_HASH);
+    }
+
+    #[test]
+    fn empty_payload_preserves_the_existing_merkle_root() {
+        let header = sample();
+        assert_eq!(commit_data(&header, "").unwrap(), header);
+    }
+
+    #[test]
+    fn rejects_payloads_over_the_learning_limit() {
+        let header = sample();
+        let oversized = "x".repeat(MAX_LEARNING_DATA_BYTES + 1);
+        assert!(commit_data(&header, &oversized).is_err());
     }
 }

@@ -1,7 +1,7 @@
 //! Use cases for inspecting block headers and validating a local header chain.
 
 use crate::domain::{
-    block::{BlockHeader, EASY_LEARNING_BITS, ZERO_HASH},
+    block::{self, BlockHeader, EASY_LEARNING_BITS, ZERO_HASH},
     chain::{self, ChainValidation},
     mining,
     validation::{self, HeaderInspection},
@@ -9,6 +9,21 @@ use crate::domain::{
 
 pub fn inspect(header: &BlockHeader) -> Result<HeaderInspection, String> {
     validation::inspect_header(header)
+}
+
+pub fn inspect_data(
+    header: &BlockHeader,
+    data: &str,
+    leading_zeroes: u8,
+) -> Result<HeaderInspection, String> {
+    validation::inspect_header_with_leading_zeroes(
+        &block::commit_data(header, data)?,
+        leading_zeroes,
+    )
+}
+
+pub fn commit_data(header: &BlockHeader, data: &str) -> Result<BlockHeader, String> {
+    block::commit_data(header, data)
 }
 
 pub fn validate_chain(headers: &[BlockHeader]) -> ChainValidation {

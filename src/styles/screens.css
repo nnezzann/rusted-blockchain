@@ -307,6 +307,56 @@
   gap: 3px;
 }
 
+.peer-block-editor-list {
+  grid-column: 1 / -1;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.peer-block-editor-list > summary {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.peer-edit-block {
+  display: grid;
+  gap: 11px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.peer-edit-block-heading {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.peer-edit-block-heading code {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-family: "SF Mono", "Cascadia Code", "Liberation Mono", monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.peer-edit-form {
+  display: grid;
+  gap: 10px;
+}
+
+.peer-difficulty-field {
+  width: 120px;
+}
+
+.peer-difficulty-field .text-input,
+.chain-difficulty-field .text-input {
+  min-height: 34px;
+}
+
 .peer-learning-note {
   color: var(--text-secondary);
   background: var(--surface);
@@ -509,6 +559,15 @@
 .peer-block-main strong {
   color: var(--text-primary);
   font-size: 12px;
+}
+
+.peer-block-main > span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .peer-block-state {
@@ -1299,6 +1358,12 @@
   overflow-wrap: anywhere;
 }
 
+.chain-hashes .chain-payload code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chain-card-actions {
   display: flex;
   gap: 3px;
@@ -1314,6 +1379,26 @@
   color: var(--blue);
   border-top: 1px solid var(--border);
   font-size: 12px;
+}
+
+.chain-inline-detail.chain-block-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  color: var(--text-primary);
+}
+
+.chain-block-editor > p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.chain-block-editor .toolbar-actions {
+  justify-content: flex-start;
+}
+
+.chain-difficulty-field {
+  width: 125px;
 }
 
 .chain-inline-detail > svg {

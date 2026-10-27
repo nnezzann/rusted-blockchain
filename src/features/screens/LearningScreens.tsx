@@ -3,13 +3,14 @@ import { Icon, type IconName } from "../../components/Icon";
 import {
   calculateMerkleRoot,
   cancelMining,
+  commitBlockData,
   createDemoChain,
   controlWindow,
   errorMessage,
   formatBytes,
   hashInput,
-  inspectBlock,
-  mineBlock,
+  inspectDataBlock,
+  mineDataBlock,
   getGpuStatus,
   getSystemInfo,
   getWindowSnapshot,
@@ -109,7 +110,12 @@ function useMiningJob() {
   const [result, setResult] = useState<MiningResult | null>(null);
   const [error, setError] = useState("");
 
-  const start = async (header: BlockHeader) => {
+  const start = async (
+    header: BlockHeader,
+    data = "",
+    leadingZeroNibbles = 0,
+    maxAttempts = 10_000_000,
+  ) => {
     const jobId = crypto.randomUUID();
     activeJobId.current = jobId;
     setMining(true);
@@ -117,7 +123,14 @@ function useMiningJob() {
     setResult(null);
     setError("");
     try {
-      const mined = await mineBlock(jobId, header, 2_000_000, setProgress);
+      const mined = await mineDataBlock(
+        jobId,
+        header,
+        data,
+        leadingZeroNibbles,
+        maxAttempts,
+        setProgress,
+      );
       setResult(mined);
       return mined;
     } catch (reason) {
@@ -254,6 +267,8 @@ function HashOutput({
 }
 
 export function BlockLabScreen({ onNavigate, learningMode }: Props) {
+  const [data, setData] = useState("");
+  const [leadingZeroNibbles, setLeadingZeroNibbles] = useState(4);
   const [fields, setFields] = useState({
     version: "1",
     previous: "0000000000000000000000000000000000000000000000000000000000000000",
@@ -308,7 +323,7 @@ export function BlockLabScreen({ onNavigate, learningMode }: Props) {
     const timer = window.setTimeout(() => {
       setLoading(true);
       setInspectionError("");
-      void inspectBlock(header)
+      void inspectDataBlock(header, data, leadingZeroNibbles)
         .then((result) => {
           if (active) setInspection(result);
         })
@@ -326,21 +341,25 @@ export function BlockLabScreen({ onNavigate, learningMode }: Props) {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [fields]);
+  }, [fields, data, leadingZeroNibbles]);
 
-  const reset = () => setFields({
-    version: "1",
-    previous: "0000000000000000000000000000000000000000000000000000000000000000",
-    merkle: "0000000000000000000000000000000000000000000000000000000000000000",
-    timestamp: new Date().toISOString().slice(0, 16),
-    target: "207fffff",
-    nonce: "0",
-  });
+  const reset = () => {
+    setFields({
+      version: "1",
+      previous: "0000000000000000000000000000000000000000000000000000000000000000",
+      merkle: "0000000000000000000000000000000000000000000000000000000000000000",
+      timestamp: new Date().toISOString().slice(0, 16),
+      target: "207fffff",
+      nonce: "0",
+    });
+    setData("");
+    setLeadingZeroNibbles(4);
+  };
 
   const mineHeader = async () => {
     setInspectionError("");
     try {
-      const mined = await miner.start(toHeader());
+      const mined = await miner.start(toHeader(), data, leadingZeroNibbles);
       if (mined) update("nonce", String(mined.header.nonce));
     } catch (reason) {
       setInspectionError(errorMessage(reason));
@@ -353,18 +372,44 @@ export function BlockLabScreen({ onNavigate, learningMode }: Props) {
         <section className="panel lab-panel">
           <div className="panel-title-row"><div><h3>Header fields</h3><p>Inputs are checked by the Rust engine.</p></div><span className="sample-pill">LOCAL MODEL</span></div>
           <div className="field-grid">
-            <Field label="Version" value={fields.version} onChange={(value) => update("version", value)} />
-            <Field label="Previous block hash" value={fields.previous} onChange={(value) => update("previous", value)} mono />
-            <Field label="Merkle root" value={fields.merkle} onChange={(value) => update("merkle", value)} mono placeholder="Not calculated" />
-            <Field label="Timestamp" value={fields.timestamp} onChange={(value) => update("timestamp", value)} type="datetime-local" />
-            <Field label="Target (nBits)" value={fields.target} onChange={(value) => update("target", value)} mono />
-            <Field label="Nonce" value={fields.nonce} onChange={(value) => update("nonce", value)} mono />
+            <Field label="Version" value={fields.version} onChange={(value) => update("version", value)} disabled={miner.mining} />
+            <Field label="Previous block hash" value={fields.previous} onChange={(value) => update("previous", value)} mono disabled={miner.mining} />
+            <Field label="Merkle root base" value={fields.merkle} onChange={(value) => update("merkle", value)} mono placeholder="Not calculated" disabled={miner.mining} />
+            <Field label="Timestamp" value={fields.timestamp} onChange={(value) => update("timestamp", value)} type="datetime-local" disabled={miner.mining} />
+            <Field label="Target (nBits)" value={fields.target} onChange={(value) => update("target", value)} mono disabled={miner.mining} />
+            <Field label="Nonce" value={fields.nonce} onChange={(value) => update("nonce", value)} mono disabled={miner.mining} />
+          </div>
+          <label className="field-label" htmlFor="block-data">Arbitrary block data</label>
+          <textarea
+            id="block-data"
+            className="text-area"
+            rows={4}
+            maxLength={16_384}
+            value={data}
+            disabled={miner.mining}
+            onChange={(event) => setData(event.target.value)}
+            placeholder="Enter text to commit into this block's Merkle root..."
+          />
+          <div className="field-grid">
+            <label className="field">
+              <span className="field-label">Required leading hex zeroes</span>
+              <input
+                className="text-input"
+                type="number"
+                disabled={miner.mining}
+                min={0}
+                max={5}
+                value={leadingZeroNibbles}
+                onChange={(event) => setLeadingZeroNibbles(Math.max(0, Math.min(5, Number(event.target.value) || 0)))}
+              />
+            </label>
+            <p className="field-hint">The payload is hashed and added as a Merkle-tree leaf. Mining searches for this visible hash prefix while also meeting the compact target.</p>
           </div>
           <div className="field-actions">
-            <button className="button button--secondary" onClick={reset}>
+            <button className="button button--secondary" onClick={reset} disabled={miner.mining}>
               <Icon name="refresh" size={15} /> Reset example
             </button>
-            <button className="button button--secondary" onClick={() => onNavigate("mining")}>Open Mining</button>
+            <button className="button button--secondary" onClick={() => onNavigate("mining")} disabled={miner.mining}>Open Mining</button>
             <button className="button button--primary" disabled={miner.mining} onClick={() => void mineHeader()}>
               <Icon name="pickaxe" size={15} /> {miner.mining ? "Mining…" : "Mine this header"}
             </button>
@@ -375,11 +420,12 @@ export function BlockLabScreen({ onNavigate, learningMode }: Props) {
         <div className="block-derived-column">
           <section className="panel validation-panel">
             <div className="validation-heading">
-              <span className={`validation-symbol ${inspection?.meetsTarget ? "validation-symbol--valid" : inspection ? "validation-symbol--invalid" : "validation-symbol--pending"}`}><Icon name={inspection?.meetsTarget ? "check" : inspection ? "close" : "clock"} size={18} /></span>
-              <div><h3>{inspection?.meetsTarget ? "Proof of work valid" : inspection ? "Hash above target" : loading ? "Inspecting header…" : "Header unavailable"}</h3><p>{inspectionError || (inspection ? "Header hash compared numerically with its compact target." : "Rust computes the header hash and target comparison.")}</p></div>
+              <span className={`validation-symbol ${inspection?.meetsTarget && inspection.meetsLeadingZeroes !== false ? "validation-symbol--valid" : inspection ? "validation-symbol--invalid" : "validation-symbol--pending"}`}><Icon name={inspection?.meetsTarget && inspection.meetsLeadingZeroes !== false ? "check" : inspection ? "close" : "clock"} size={18} /></span>
+              <div><h3>{inspection?.meetsTarget && inspection.meetsLeadingZeroes === false ? "Required hash prefix not met" : inspection?.meetsTarget ? "Proof of work valid" : inspection ? "Hash above target" : loading ? "Inspecting header…" : "Header unavailable"}</h3><p>{inspectionError || (inspection ? `Rust checks the numeric target and ${leadingZeroNibbles} leading hexadecimal zeroes.` : "Rust computes the header hash and target comparison.")}</p></div>
             </div>
             <div className="derived-list">
               <DerivedValue label="Header hash (SHA-256d)" value={inspection?.hash ?? ""} />
+              <DerivedValue label="Committed Merkle root" value={inspection?.merkleRoot ?? ""} />
               <DerivedValue label="Target" value={inspection?.target ?? ""} />
             </div>
           </section>
@@ -389,7 +435,7 @@ export function BlockLabScreen({ onNavigate, learningMode }: Props) {
           </section>
           <div className="notice notice--info">
             <Icon name="info" size={16} />
-            <p>Changing a committed field changes the Rust-calculated hash. Proof of work is an unsigned numeric comparison, not a prefix check.</p>
+            <p>Changing a header field or payload changes the Rust-calculated hash. The extra leading-zero exercise is checked in addition to numeric proof of work.</p>
           </div>
         </div>
       </div>
@@ -404,6 +450,7 @@ function Field({
   mono = false,
   type = "text",
   placeholder,
+  disabled = false,
 }: {
   label: string;
   value: string;
@@ -411,6 +458,7 @@ function Field({
   mono?: boolean;
   type?: string;
   placeholder?: string;
+  disabled?: boolean;
 }) {
   const id = `field-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   return (
@@ -421,6 +469,7 @@ function Field({
         className={`text-input${mono ? " text-input--mono" : ""}`}
         type={type}
         value={value}
+        disabled={disabled}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
       />
@@ -471,7 +520,7 @@ export function MiningScreen({ onNavigate, learningMode }: Props) {
     bits: 0x1f00ffff,
     nonce: 0,
   }));
-  const start = () => void miner.start(header);
+  const start = () => void miner.start(header, "", 0, 2_000_000);
 
   return (
     <LabLayout title="Proof of work" icon="pickaxe" note="Search for a header hash that meets its target." guidance="Mining tries different nonce values until the header hash is numerically at or below the target. Rust performs the search and reports bounded progress. This is not Bitcoin network mining." learningMode={learningMode} backendConnected>
@@ -520,8 +569,20 @@ function Metric({ label, value, mono = false }: { label: string; value: string; 
 
 export function ChainLabScreen({ onNavigate, learningMode }: Props) {
   const [headers, setHeaders] = useState<BlockHeader[]>([]);
+  const [payloads, setPayloads] = useState<string[]>([]);
+  const [baseMerkleRoots, setBaseMerkleRoots] = useState<string[]>([]);
   const [validation, setValidation] = useState<ChainValidation | null>(null);
   const [selectedBlock, setSelectedBlock] = useState<number | null>(0);
+  const [leadingZeroNibbles, setLeadingZeroNibbles] = useState(3);
+  const [draft, setDraft] = useState({
+    version: "",
+    previousHash: "",
+    merkleRoot: "",
+    timestamp: "",
+    bits: "",
+    nonce: "",
+    data: "",
+  });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [savingSnapshot, setSavingSnapshot] = useState(false);
@@ -535,6 +596,8 @@ export function ChainLabScreen({ onNavigate, learningMode }: Props) {
       const demo = await createDemoChain();
       const result = await validateChain(demo);
       setHeaders(demo);
+      setPayloads(demo.map(() => ""));
+      setBaseMerkleRoots(demo.map((header) => header.merkleRoot));
       setValidation(result);
       setSelectedBlock(0);
     } catch (reason) {
@@ -547,6 +610,20 @@ export function ChainLabScreen({ onNavigate, learningMode }: Props) {
   useEffect(() => {
     void loadExample();
   }, []);
+
+  useEffect(() => {
+    if (selectedBlock === null || !headers[selectedBlock]) return;
+    const header = headers[selectedBlock];
+    setDraft({
+      version: String(header.version),
+      previousHash: header.previousHash,
+      merkleRoot: baseMerkleRoots[selectedBlock] ?? header.merkleRoot,
+      timestamp: String(header.timestamp),
+      bits: header.bits.toString(16).padStart(8, "0"),
+      nonce: String(header.nonce),
+      data: payloads[selectedBlock] ?? "",
+    });
+  }, [selectedBlock, headers, payloads, baseMerkleRoots]);
 
   useEffect(() => {
     let active = true;
@@ -568,9 +645,52 @@ export function ChainLabScreen({ onNavigate, learningMode }: Props) {
 
   const editSelectedNonce = () => {
     if (selectedBlock === null) return;
-    setHeaders((current) => current.map((header, index) =>
-      index === selectedBlock ? { ...header, nonce: header.nonce + 1 } : header,
-    ));
+    setDraft((current) => ({ ...current, nonce: String(Number(current.nonce) + 1) }));
+  };
+
+  const applyBlockEdits = async (event: FormEvent) => {
+    event.preventDefault();
+    if (selectedBlock === null || !headers[selectedBlock]) return;
+    const version = Number(draft.version);
+    const timestamp = Number(draft.timestamp);
+    const bits = Number.parseInt(draft.bits, 16);
+    const nonce = Number(draft.nonce);
+    if (!Number.isInteger(version) || version < -2_147_483_648 || version > 2_147_483_647) {
+      setError("Version must be a signed 32-bit integer.");
+      return;
+    }
+    if (!Number.isInteger(timestamp) || timestamp < 0 || timestamp > 4_294_967_295) {
+      setError("Timestamp must be an unsigned 32-bit integer.");
+      return;
+    }
+    if (!Number.isInteger(bits) || bits < 0 || bits > 4_294_967_295) {
+      setError("Target must be an 8-digit hexadecimal compact target.");
+      return;
+    }
+    if (!Number.isInteger(nonce) || nonce < 0 || nonce > 4_294_967_295) {
+      setError("Nonce must be an unsigned 32-bit integer.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const baseHeader: BlockHeader = {
+        version,
+        previousHash: draft.previousHash,
+        merkleRoot: draft.merkleRoot,
+        timestamp,
+        bits,
+        nonce,
+      };
+      const committed = await commitBlockData(baseHeader, draft.data);
+      setHeaders((current) => current.map((header, index) => index === selectedBlock ? committed : header));
+      setBaseMerkleRoots((current) => current.map((root, index) => index === selectedBlock ? baseHeader.merkleRoot : root));
+      setPayloads((current) => current.map((data, index) => index === selectedBlock ? draft.data : data));
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const mineFromSelection = async () => {
@@ -586,8 +706,20 @@ export function ChainLabScreen({ onNavigate, learningMode }: Props) {
       for (let index = selectedBlock; index < next.length; index += 1) {
         const current = next[index];
         if (!current) continue;
-        const header = { ...current, previousHash, nonce: 0 };
-        const mined = await mineBlock(crypto.randomUUID(), header, 2_000_000, () => {});
+        const header = {
+          ...current,
+          previousHash,
+          merkleRoot: baseMerkleRoots[index] ?? current.merkleRoot,
+          nonce: 0,
+        };
+        const mined = await mineDataBlock(
+          crypto.randomUUID(),
+          header,
+          payloads[index] ?? "",
+          leadingZeroNibbles,
+          10_000_000,
+          () => {},
+        );
         next[index] = mined.header;
         previousHash = mined.hash;
       }
@@ -606,13 +738,16 @@ export function ChainLabScreen({ onNavigate, learningMode }: Props) {
     setBusy(true);
     setError("");
     try {
-      const mined = await mineBlock(crypto.randomUUID(), {
+      const mined = await mineDataBlock(crypto.randomUUID(), {
         ...tip,
         previousHash: parentHash,
+        merkleRoot: "0000000000000000000000000000000000000000000000000000000000000000",
         timestamp: tip.timestamp + 1,
         nonce: 0,
-      }, 2_000_000, () => {});
+      }, "", leadingZeroNibbles, 10_000_000, () => {});
       setHeaders((current) => [...current, mined.header]);
+      setPayloads((current) => [...current, ""]);
+      setBaseMerkleRoots((current) => [...current, mined.header.merkleRoot]);
       setSelectedBlock(headers.length);
     } catch (reason) {
       setError(errorMessage(reason));
@@ -630,7 +765,7 @@ export function ChainLabScreen({ onNavigate, learningMode }: Props) {
         name: `Header chain · ${new Date().toLocaleString()}`,
         kind: "Header chain",
         description: "Rust-validated header-chain snapshot. This does not include transactions.",
-        data: { headers, validation },
+        data: { headers, payloads, baseMerkleRoots, validation },
       });
       setSnapshotNotice(`Saved “${saved.name}” to SQLite experiments.`);
     } catch (reason) {
@@ -640,11 +775,23 @@ export function ChainLabScreen({ onNavigate, learningMode }: Props) {
     }
   };
 
+  const selectedHeader = selectedBlock === null ? undefined : headers[selectedBlock];
+  const blockDraftDirty = selectedBlock !== null && selectedHeader !== undefined && (
+    draft.version !== String(selectedHeader.version)
+    || draft.previousHash !== selectedHeader.previousHash
+    || draft.merkleRoot !== (baseMerkleRoots[selectedBlock] ?? selectedHeader.merkleRoot)
+    || draft.timestamp !== String(selectedHeader.timestamp)
+    || draft.bits !== selectedHeader.bits.toString(16).padStart(8, "0")
+    || draft.nonce !== String(selectedHeader.nonce)
+    || draft.data !== (payloads[selectedBlock] ?? "")
+  );
+
   return (
     <LabLayout title="Linked blocks" icon="chain" note="A block commits to its parent using the previous header hash." guidance="Each block points to its parent by storing that parent's hash. Changing an earlier block breaks the later link unless descendants are updated and re-mined in sequence." learningMode={learningMode} backendConnected>
       <div className="chain-toolbar">
         <div><span className={`sample-pill${validation?.valid ? " status-pill--success" : ""}`}>{validation?.valid ? "VALID HEADER CHAIN" : "RUST VALIDATION"}</span><span className="chain-count">{headers.length} blocks · header proof-of-work only</span></div>
         <div className="toolbar-actions">
+          <label className="field chain-difficulty-field"><span className="field-label">Leading zeroes</span><input className="text-input" type="number" min={0} max={5} disabled={busy} value={leadingZeroNibbles} onChange={(event) => setLeadingZeroNibbles(Math.max(0, Math.min(5, Number(event.target.value) || 0)))} /></label>
           <button className="button button--secondary" disabled={busy || loading} onClick={() => void loadExample()}><Icon name="refresh" size={15} /> Reset example</button>
           <button className="button button--secondary" disabled={busy || loading || !validation?.valid || savingSnapshot} onClick={() => void saveChainSnapshot()}><Icon name="archive" size={15} /> {savingSnapshot ? "Saving…" : "Save snapshot"}</button>
           <button className="button button--primary" disabled={busy || loading || !validation?.valid} onClick={() => void addBlock()}><Icon name="plus" size={15} /> Add Block</button>
@@ -666,19 +813,38 @@ export function ChainLabScreen({ onNavigate, learningMode }: Props) {
                 <div className="chain-hashes">
                   <span>Hash <code>{entry?.hash ?? "Unavailable"}</code></span>
                   <span>Previous <code>{header.previousHash}</code></span>
+                  <span className="chain-payload">Data <code title={payloads[height] || undefined}>{payloads[height] || "—"}</code></span>
                 </div>
               </div>
               <div className="chain-card-actions">
                 <button className="icon-button" aria-label={`Inspect block ${height}`} onClick={() => setSelectedBlock(isSelected ? null : height)}><Icon name="edit" size={15} /></button>
               </div>
-              {isSelected && <div className="chain-inline-detail"><Icon name="info" size={15} /><span>{entry?.reasons.join(" ") || `Nonce ${header.nonce}; compact target 0x${header.bits.toString(16).padStart(8, "0")}.`}</span><button className="text-button" onClick={editSelectedNonce} disabled={busy}>Change nonce</button><button className="text-button" onClick={() => void mineFromSelection()} disabled={busy}>{busy ? "Mining…" : "Re-mine this block and descendants"}</button><button className="text-button" onClick={() => onNavigate("block")}>Open Block Lab</button></div>}
+              {isSelected && <form className="chain-inline-detail chain-block-editor" onSubmit={(event) => void applyBlockEdits(event)}>
+                <p>{entry?.reasons.join(" ") || `Nonce ${header.nonce}; compact target 0x${header.bits.toString(16).padStart(8, "0")}.`}</p>
+                <div className="field-grid">
+                  <label className="field"><span className="field-label">Version</span><input className="text-input" disabled={busy} value={draft.version} onChange={(event) => setDraft((current) => ({ ...current, version: event.target.value }))} /></label>
+                  <label className="field"><span className="field-label">Previous hash</span><input className="text-input text-input--mono" disabled={busy} value={draft.previousHash} onChange={(event) => setDraft((current) => ({ ...current, previousHash: event.target.value }))} /></label>
+                  <label className="field"><span className="field-label">Merkle root base</span><input className="text-input text-input--mono" disabled={busy} value={draft.merkleRoot} onChange={(event) => setDraft((current) => ({ ...current, merkleRoot: event.target.value }))} /></label>
+                  <label className="field"><span className="field-label">Timestamp (Unix)</span><input className="text-input" disabled={busy} value={draft.timestamp} onChange={(event) => setDraft((current) => ({ ...current, timestamp: event.target.value }))} /></label>
+                  <label className="field"><span className="field-label">Target (nBits)</span><input className="text-input text-input--mono" disabled={busy} value={draft.bits} onChange={(event) => setDraft((current) => ({ ...current, bits: event.target.value }))} /></label>
+                  <label className="field"><span className="field-label">Nonce</span><input className="text-input" disabled={busy} value={draft.nonce} onChange={(event) => setDraft((current) => ({ ...current, nonce: event.target.value }))} /></label>
+                </div>
+                <label className="field-label" htmlFor={`chain-data-${height}`}>Arbitrary block data</label>
+                <textarea id={`chain-data-${height}`} className="text-area" rows={3} maxLength={16_384} disabled={busy} value={draft.data} onChange={(event) => setDraft((current) => ({ ...current, data: event.target.value }))} />
+                <div className="toolbar-actions">
+                  <button className="button button--secondary" type="button" onClick={editSelectedNonce} disabled={busy}>Increment nonce</button>
+                  <button className="button button--secondary" type="submit" disabled={busy}>Apply edits</button>
+                  <button className="button button--primary" type="button" onClick={() => void mineFromSelection()} disabled={busy || blockDraftDirty}>{busy ? "Mining…" : blockDraftDirty ? "Apply edits before mining" : `Mine ${leadingZeroNibbles} zeroes and descendants`}</button>
+                  <button className="text-button" type="button" onClick={() => onNavigate("block")}>Open Block Lab</button>
+                </div>
+              </form>}
             </article>
           );
         })}
       </div>
       <div className="notice notice--warning">
         <Icon name="info" size={16} />
-        <p>Editing a block changes its hash and invalidates its proof of work. Descendants must then point to the changed parent hash and be re-mined in order. This example validates headers only; it has no transactions or network consensus.</p>
+        <p>Editing a header field or arbitrary payload changes its Merkle commitment and hash. Descendants become invalid until their links and proof of work are rebuilt in order. The zero-prefix requirement is additional to the compact target. This example has no transactions or network consensus.</p>
       </div>
     </LabLayout>
   );

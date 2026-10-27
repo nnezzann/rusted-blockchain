@@ -3,14 +3,17 @@ import { Icon } from "../../components/Icon";
 import {
   comparePeerChains,
   createPeer,
+  editPeerBlock,
   errorMessage,
   listPeers,
   minePeerBlock,
   propagatePeerChain,
+  reminePeerChain,
   removePeer,
   type PeerComparison,
   type PeerPropagation,
   type PeerView,
+  type BlockHeader,
 } from "../../services/nativeRuntime";
 import { createExperiment } from "../../services/experiments";
 
@@ -28,6 +31,88 @@ export function PeerNetworkScreen() {
   const [lastAction, setLastAction] = useState<PeerPropagation | null>(null);
   const [savingPeerId, setSavingPeerId] = useState<string | null>(null);
   const [snapshotNotice, setSnapshotNotice] = useState("");
+  const [leadingZeroNibbles, setLeadingZeroNibbles] = useState(3);
+  const [editingBlock, setEditingBlock] = useState<{ peerId: string; height: number } | null>(null);
+  const [blockDraft, setBlockDraft] = useState({
+    version: "",
+    previousHash: "",
+    merkleRoot: "",
+    timestamp: "",
+    bits: "",
+    nonce: "",
+    data: "",
+  });
+
+  const beginBlockEdit = (peer: PeerView, height: number) => {
+    const header = peer.headers[height];
+    if (!header) return;
+    setEditingBlock({ peerId: peer.id, height });
+    setBlockDraft({
+      version: String(header.version),
+      previousHash: header.previousHash,
+      merkleRoot: peer.baseMerkleRoots[height] ?? header.merkleRoot,
+      timestamp: String(header.timestamp),
+      bits: header.bits.toString(16).padStart(8, "0"),
+      nonce: String(header.nonce),
+      data: peer.payloads[height] ?? "",
+    });
+  };
+
+  const savePeerBlockEdit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!editingBlock) return;
+    const version = Number(blockDraft.version);
+    const timestamp = Number(blockDraft.timestamp);
+    const bits = Number.parseInt(blockDraft.bits, 16);
+    const nonce = Number(blockDraft.nonce);
+    if (!Number.isInteger(version) || version < -2_147_483_648 || version > 2_147_483_647) {
+      setError("Version must be a signed 32-bit integer.");
+      return;
+    }
+    if (!Number.isInteger(timestamp) || timestamp < 0 || timestamp > 4_294_967_295) {
+      setError("Timestamp must be an unsigned 32-bit integer.");
+      return;
+    }
+    if (!Number.isInteger(bits) || bits < 0 || bits > 4_294_967_295) {
+      setError("Target must be an 8-digit hexadecimal compact target.");
+      return;
+    }
+    if (!Number.isInteger(nonce) || nonce < 0 || nonce > 4_294_967_295) {
+      setError("Nonce must be an unsigned 32-bit integer.");
+      return;
+    }
+    const header: BlockHeader = {
+      version,
+      previousHash: blockDraft.previousHash,
+      merkleRoot: blockDraft.merkleRoot,
+      timestamp,
+      bits,
+      nonce,
+    };
+    setBusy(true);
+    setError("");
+    try {
+      const updated = await editPeerBlock(editingBlock.peerId, editingBlock.height, header, blockDraft.data);
+      setPeers((current) => current.map((peer) => peer.id === updated.id ? updated : peer));
+    } catch (reason) {
+      setError(`Could not edit peer block: ${errorMessage(reason)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reminePeerFrom = async (peerId: string, height: number) => {
+    setBusy(true);
+    setError("");
+    try {
+      const updated = await reminePeerChain(peerId, height, leadingZeroNibbles);
+      setPeers((current) => current.map((peer) => peer.id === updated.id ? updated : peer));
+    } catch (reason) {
+      setError(`Could not re-mine peer chain: ${errorMessage(reason)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const refreshPeers = async () => {
     try {
@@ -51,7 +136,7 @@ export function PeerNetworkScreen() {
   }, []);
 
   useEffect(() => {
-    if (!leftId || !rightId || leftId === rightId) {
+    if (view !== "compare" || !leftId || !rightId || leftId === rightId) {
       setComparison(null);
       return;
     }
@@ -67,7 +152,7 @@ export function PeerNetworkScreen() {
     return () => {
       active = false;
     };
-  }, [leftId, rightId, peers]);
+  }, [leftId, rightId, peers, view]);
 
   const leftPeer = peers.find((peer) => peer.id === leftId) ?? null;
   const rightPeer = peers.find((peer) => peer.id === rightId && peer.id !== leftId) ?? null;
@@ -177,6 +262,7 @@ export function PeerNetworkScreen() {
           <button className={view === "compare" ? "peer-view-switch__active" : ""} aria-pressed={view === "compare"} onClick={() => setView("compare")}><Icon name="layers" size={15} /> Compare chains</button>
         </div>
         <div className="toolbar-actions">
+          <label className="field peer-difficulty-field"><span className="field-label">Leading zeroes</span><input className="text-input" type="number" min={0} max={5} disabled={busy} value={leadingZeroNibbles} onChange={(event) => setLeadingZeroNibbles(Math.max(0, Math.min(5, Number(event.target.value) || 0)))} /></label>
           <button className="button button--secondary" disabled={loading || busy} onClick={() => void refreshPeers()}><Icon name="refresh" size={15} /> Refresh</button>
           <button className="button button--primary" disabled={busy || loading} onClick={() => { setPeerName(`Peer ${peers.length + 1}`); setFormOpen(true); }}><Icon name="plus" size={15} /> Create Peer</button>
         </div>
@@ -223,10 +309,45 @@ export function PeerNetworkScreen() {
                   <div className="peer-card-metric"><small>Blocks</small><strong>{peer.headers.length}</strong></div>
                   <div className="peer-card-tip"><small>Tip hash · Rust</small><code>{peer.tipHash}</code></div>
                   <div className="peer-card-actions">
-                    <button className="button button--secondary" disabled={busy || !peer.valid} onClick={() => void runPeerAction(async () => { await minePeerBlock(peer.id); })}><Icon name="pickaxe" size={14} /> Mine block</button>
+                    <button className="button button--secondary" disabled={busy || !peer.valid} onClick={() => void runPeerAction(async () => { await minePeerBlock(peer.id, leadingZeroNibbles); })}><Icon name="pickaxe" size={14} /> Mine block</button>
                     <button className="icon-button" aria-label={`Save ${peer.name} chain snapshot`} title="Save chain snapshot" disabled={savingPeerId === peer.id} onClick={() => void savePeerSnapshot(peer)}><Icon name="archive" size={15} /></button>
                     <button className="icon-button icon-button--danger" aria-label={`Remove ${peer.name}`} title="Remove peer" disabled={busy || peers.length <= 1} onClick={() => void deletePeer(peer)}><Icon name="trash" size={15} /></button>
                   </div>
+                  <details className="peer-block-editor-list">
+                    <summary>Edit individual block headers and payloads</summary>
+                    {peer.headers.map((_, height) => {
+                      const editing = editingBlock?.peerId === peer.id && editingBlock.height === height;
+                      const header = peer.headers[height];
+                      const draftDirty = editing && header !== undefined && (
+                        blockDraft.version !== String(header.version)
+                        || blockDraft.previousHash !== header.previousHash
+                        || blockDraft.merkleRoot !== (peer.baseMerkleRoots[height] ?? header.merkleRoot)
+                        || blockDraft.timestamp !== String(header.timestamp)
+                        || blockDraft.bits !== header.bits.toString(16).padStart(8, "0")
+                        || blockDraft.nonce !== String(header.nonce)
+                        || blockDraft.data !== (peer.payloads[height] ?? "")
+                      );
+                      return <div className="peer-edit-block" key={`${peer.id}-edit-${height}`}>
+                        <div className="peer-edit-block-heading"><strong>{height === 0 ? "Genesis block" : `Block ${height}`}</strong><code>{peer.hashes[height] ?? "Invalid hash"}</code><button className="text-button" type="button" onClick={() => beginBlockEdit(peer, height)} disabled={busy}>Edit</button></div>
+                        {editing && <form className="peer-edit-form" onSubmit={(event) => void savePeerBlockEdit(event)}>
+                          <div className="field-grid">
+                            <label className="field"><span className="field-label">Version</span><input className="text-input" disabled={busy} value={blockDraft.version} onChange={(event) => setBlockDraft((current) => ({ ...current, version: event.target.value }))} /></label>
+                            <label className="field"><span className="field-label">Previous hash</span><input className="text-input text-input--mono" disabled={busy} value={blockDraft.previousHash} onChange={(event) => setBlockDraft((current) => ({ ...current, previousHash: event.target.value }))} /></label>
+                            <label className="field"><span className="field-label">Merkle root base</span><input className="text-input text-input--mono" disabled={busy} value={blockDraft.merkleRoot} onChange={(event) => setBlockDraft((current) => ({ ...current, merkleRoot: event.target.value }))} /></label>
+                            <label className="field"><span className="field-label">Timestamp (Unix)</span><input className="text-input" disabled={busy} value={blockDraft.timestamp} onChange={(event) => setBlockDraft((current) => ({ ...current, timestamp: event.target.value }))} /></label>
+                            <label className="field"><span className="field-label">Fixed target (nBits)</span><input className="text-input text-input--mono" readOnly value={blockDraft.bits} /></label>
+                            <label className="field"><span className="field-label">Nonce</span><input className="text-input" disabled={busy} value={blockDraft.nonce} onChange={(event) => setBlockDraft((current) => ({ ...current, nonce: event.target.value }))} /></label>
+                          </div>
+                          <label className="field-label" htmlFor={`peer-data-${peer.id}-${height}`}>Arbitrary block data</label>
+                          <textarea id={`peer-data-${peer.id}-${height}`} className="text-area" rows={3} maxLength={16_384} disabled={busy} value={blockDraft.data} onChange={(event) => setBlockDraft((current) => ({ ...current, data: event.target.value }))} />
+                          <div className="toolbar-actions">
+                            <button className="button button--secondary" type="submit" disabled={busy}>Apply edits</button>
+                            <button className="button button--primary" type="button" disabled={busy || draftDirty} onClick={() => void reminePeerFrom(peer.id, height)}>{draftDirty ? "Apply edits before mining" : `Mine block & descendants (${leadingZeroNibbles} zeroes)`}</button>
+                          </div>
+                        </form>}
+                      </div>;
+                    })}
+                  </details>
                 </article>
               ))}
             </div>
@@ -304,7 +425,7 @@ function PeerChainColumn({
           return (
             <article className={`peer-block${shared ? " peer-block--shared" : ""}`} key={`${peer.id}-${height}`}>
               <span className="peer-block-mark"><Icon name={height === 0 ? "layers" : "cube"} size={15} /></span>
-              <div className="peer-block-main"><strong>{height === 0 ? "Genesis block" : `Block ${height}`}</strong><code>{peer.hashes[height] ?? "Hash unavailable"}</code></div>
+              <div className="peer-block-main"><strong>{height === 0 ? "Genesis block" : `Block ${height}`}</strong><code>{peer.hashes[height] ?? "Hash unavailable"}</code><span>{peer.payloads[height] ? `Data: ${peer.payloads[height]}` : "No payload data"}</span></div>
               <span className={`peer-block-state${shared ? " peer-block-state--shared" : ""}`}>{shared ? "Shared block" : "Fork block"}</span>
             </article>
           );

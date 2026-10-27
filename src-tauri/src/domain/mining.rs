@@ -12,6 +12,7 @@ use super::{block::BlockHeader, hash::sha256d, target::Target};
 
 pub const MAX_MINING_ATTEMPTS: u64 = 10_000_000;
 pub const PROGRESS_INTERVAL: u64 = 25_000;
+pub const MAX_LEADING_ZERO_NIBBLES: u8 = 5;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,8 +35,39 @@ pub struct MiningResult {
 }
 
 pub fn mine(
+    header: BlockHeader,
+    max_attempts: u64,
+    is_cancelled: impl FnMut() -> bool,
+    on_progress: impl FnMut(MiningProgress),
+) -> Result<MiningResult, String> {
+    mine_internal(header, max_attempts, None, is_cancelled, on_progress)
+}
+
+pub fn mine_with_leading_zeros(
+    header: BlockHeader,
+    max_attempts: u64,
+    leading_zero_nibbles: u8,
+    is_cancelled: impl FnMut() -> bool,
+    on_progress: impl FnMut(MiningProgress),
+) -> Result<MiningResult, String> {
+    if leading_zero_nibbles > MAX_LEADING_ZERO_NIBBLES {
+        return Err(format!(
+            "Leading-zero difficulty must be between 0 and {MAX_LEADING_ZERO_NIBBLES} hexadecimal zeroes."
+        ));
+    }
+    mine_internal(
+        header,
+        max_attempts,
+        Some(leading_zero_nibbles),
+        is_cancelled,
+        on_progress,
+    )
+}
+
+fn mine_internal(
     mut header: BlockHeader,
     max_attempts: u64,
+    leading_zero_nibbles: Option<u8>,
     mut is_cancelled: impl FnMut() -> bool,
     mut on_progress: impl FnMut(MiningProgress),
 ) -> Result<MiningResult, String> {
@@ -56,7 +88,13 @@ pub fn mine(
         header.nonce = initial_nonce.wrapping_add((attempt - 1) as u32);
         let hash_bytes = sha256d(&header.serialize()?);
         let hash = super::hash::display_hash(&hash_bytes);
-        if hash.as_bytes() <= target_hex.as_bytes() {
+        if hash.as_bytes() <= target_hex.as_bytes()
+            && leading_zero_nibbles.is_none_or(|zeroes| {
+                hash.as_bytes()
+                    .get(..usize::from(zeroes))
+                    .is_some_and(|prefix| prefix.iter().all(|digit| *digit == b'0'))
+            })
+        {
             return Ok(MiningResult {
                 header,
                 hash,
@@ -116,5 +154,18 @@ mod tests {
                 .unwrap_err()
                 .contains("cancelled")
         );
+    }
+
+    #[test]
+    fn mines_for_a_configurable_display_hash_zero_prefix() {
+        let result = mine_with_leading_zeros(header(), 10_000, 2, || false, |_| {}).unwrap();
+        assert!(result.hash.starts_with("00"));
+        assert!(
+            Target::from_compact(EASY_LEARNING_BITS)
+                .unwrap()
+                .meets(&result.hash)
+                .unwrap()
+        );
+        assert!(mine_with_leading_zeros(header(), 10, 9, || false, |_| {}).is_err());
     }
 }

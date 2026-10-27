@@ -7,13 +7,13 @@
 use serde::Serialize;
 
 use super::{
-    block::{BlockHeader, EASY_LEARNING_BITS, ZERO_HASH},
+    block::{self, BlockHeader, EASY_LEARNING_BITS, ZERO_HASH},
     chain::{self, ChainValidation},
     hash::{display_hash, sha256d},
     mining,
 };
 
-const PEER_MINING_ATTEMPTS: u64 = 100_000;
+const PEER_MINING_ATTEMPTS: u64 = mining::MAX_MINING_ATTEMPTS;
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -22,6 +22,8 @@ pub struct Peer {
     pub name: String,
     pub chain_name: String,
     pub headers: Vec<BlockHeader>,
+    pub payloads: Vec<String>,
+    pub base_merkle_roots: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -31,7 +33,9 @@ pub struct PeerView {
     pub name: String,
     pub chain_name: String,
     pub headers: Vec<BlockHeader>,
-    pub hashes: Vec<String>,
+    pub payloads: Vec<String>,
+    pub base_merkle_roots: Vec<String>,
+    pub hashes: Vec<Option<String>>,
     pub height: usize,
     pub tip_hash: String,
     pub cumulative_work: u64,
@@ -79,12 +83,16 @@ impl PeerNetwork {
                     name: "Peer 1".into(),
                     chain_name: "Learning chain".into(),
                     headers: chain.clone(),
+                    payloads: vec![String::new()],
+                    base_merkle_roots: vec![ZERO_HASH.into()],
                 },
                 Peer {
                     id: "peer-2".into(),
                     name: "Peer 2".into(),
                     chain_name: "Learning chain".into(),
                     headers: chain,
+                    payloads: vec![String::new()],
+                    base_merkle_roots: vec![ZERO_HASH.into()],
                 },
             ],
         })
@@ -128,6 +136,8 @@ impl PeerNetwork {
             name: name.to_string(),
             chain_name: format!("{} copy", source.chain_name),
             headers: source.headers.clone(),
+            payloads: source.payloads.clone(),
+            base_merkle_roots: source.base_merkle_roots.clone(),
         };
         self.peers.push(peer.clone());
         Ok(peer)
@@ -146,8 +156,9 @@ impl PeerNetwork {
         Ok(())
     }
 
-    pub fn mine_next(&mut self, id: &str) -> Result<Peer, String> {
+    pub fn mine_next(&mut self, id: &str, leading_zero_nibbles: u8) -> Result<Peer, String> {
         let peer = self.peer(id)?.clone();
+        validate_peer(&peer)?;
         let tip = peer
             .headers
             .last()
@@ -163,14 +174,107 @@ impl PeerNetwork {
             bits: EASY_LEARNING_BITS,
             nonce: 0,
         };
-        let mined = mining::mine(header, PEER_MINING_ATTEMPTS, || false, |_| {})?;
+        let mined = mining::mine_with_leading_zeros(
+            header,
+            PEER_MINING_ATTEMPTS,
+            leading_zero_nibbles,
+            || false,
+            |_| {},
+        )?;
         let stored = self
             .peers
             .iter_mut()
             .find(|candidate| candidate.id == id)
             .ok_or_else(|| "Peer no longer exists.".to_string())?;
-        stored.headers.push(mined.header);
+        stored.headers.push(mined.header.clone());
+        stored.payloads.push(String::new());
+        stored.base_merkle_roots.push(mined.header.merkle_root);
         Ok(stored.clone())
+    }
+
+    pub fn edit_block(
+        &mut self,
+        id: &str,
+        height: usize,
+        header: BlockHeader,
+        data: String,
+    ) -> Result<PeerView, String> {
+        let peer = self
+            .peers
+            .iter_mut()
+            .find(|peer| peer.id == id)
+            .ok_or_else(|| "Peer does not exist.".to_string())?;
+        if height >= peer.headers.len() {
+            return Err("Block height is outside this peer's chain.".into());
+        }
+        if header.bits != EASY_LEARNING_BITS {
+            return Err(
+                "Peer target is fixed so cumulative-work comparisons remain meaningful.".into(),
+            );
+        }
+        let base_merkle_root = header.merkle_root.clone();
+        let committed = block::commit_data(&header, &data)?;
+        peer.headers[height] = committed;
+        peer.payloads[height] = data;
+        peer.base_merkle_roots[height] = base_merkle_root;
+        peer_view(peer)
+    }
+
+    pub fn remine_from(
+        &mut self,
+        id: &str,
+        height: usize,
+        leading_zero_nibbles: u8,
+    ) -> Result<PeerView, String> {
+        if leading_zero_nibbles > mining::MAX_LEADING_ZERO_NIBBLES {
+            return Err(format!(
+                "Leading-zero difficulty must be between 0 and {} hexadecimal zeroes.",
+                mining::MAX_LEADING_ZERO_NIBBLES
+            ));
+        }
+        let original = self.peer(id)?.clone();
+        if height >= original.headers.len() {
+            return Err("Block height is outside this peer's chain.".into());
+        }
+        let previous_hash = if height == 0 {
+            ZERO_HASH.to_string()
+        } else {
+            chain::validate(&original.headers[..height])
+                .blocks
+                .last()
+                .and_then(|block| block.hash.clone())
+                .ok_or_else(|| {
+                    "Cannot mine this block until its parent chain is valid.".to_string()
+                })?
+        };
+        let mut headers = original.headers.clone();
+        let mut next_previous_hash = previous_hash;
+        for (index, destination_header) in headers.iter_mut().enumerate().skip(height) {
+            let current = &original.headers[index];
+            let base_header = BlockHeader {
+                previous_hash: next_previous_hash,
+                merkle_root: original.base_merkle_roots[index].clone(),
+                nonce: 0,
+                ..current.clone()
+            };
+            let committed = block::commit_data(&base_header, &original.payloads[index])?;
+            let mined = mining::mine_with_leading_zeros(
+                committed,
+                PEER_MINING_ATTEMPTS,
+                leading_zero_nibbles,
+                || false,
+                |_| {},
+            )?;
+            next_previous_hash = mined.hash;
+            *destination_header = mined.header;
+        }
+        let peer = self
+            .peers
+            .iter_mut()
+            .find(|peer| peer.id == id)
+            .ok_or_else(|| "Peer no longer exists.".to_string())?;
+        peer.headers = headers;
+        peer_view(peer)
     }
 
     pub fn compare(&self, left_id: &str, right_id: &str) -> Result<PeerComparison, String> {
@@ -228,6 +332,8 @@ impl PeerNetwork {
                 .find(|peer| peer.id == destination_id)
                 .ok_or_else(|| "Destination peer no longer exists.".to_string())?;
             peer.headers = source.headers.clone();
+            peer.payloads = source.payloads.clone();
+            peer.base_merkle_roots = source.base_merkle_roots.clone();
             (
                 true,
                 "Destination adopted the valid chain with greater cumulative work.".to_string(),
@@ -290,21 +396,23 @@ fn validate_peer(peer: &Peer) -> Result<ChainValidation, String> {
 }
 
 fn peer_view(peer: &Peer) -> Result<PeerView, String> {
-    let validation = validate_peer(peer)?;
+    let validation = chain::validate(&peer.headers);
     let tip_hash = validation
         .blocks
         .last()
         .and_then(|block| block.hash.clone())
-        .ok_or_else(|| "Peer chain tip has no valid hash.".to_string())?;
+        .unwrap_or_default();
     Ok(PeerView {
         id: peer.id.clone(),
         name: peer.name.clone(),
         chain_name: peer.chain_name.clone(),
         headers: peer.headers.clone(),
+        payloads: peer.payloads.clone(),
+        base_merkle_roots: peer.base_merkle_roots.clone(),
         hashes: validation
             .blocks
             .iter()
-            .filter_map(|block| block.hash.clone())
+            .map(|block| block.hash.clone())
             .collect(),
         height: peer.headers.len().saturating_sub(1),
         tip_hash,
@@ -341,8 +449,8 @@ mod tests {
     #[test]
     fn independently_mined_forks_are_real_and_choose_more_work() {
         let mut network = PeerNetwork::new().unwrap();
-        let left = network.mine_next("peer-1").unwrap();
-        let right = network.mine_next("peer-2").unwrap();
+        let left = network.mine_next("peer-1", 0).unwrap();
+        let right = network.mine_next("peer-2", 0).unwrap();
         assert_ne!(
             left.headers[1].hash().unwrap(),
             right.headers[1].hash().unwrap()
@@ -355,7 +463,7 @@ mod tests {
         assert_eq!(tie.left_cumulative_work, tie.right_cumulative_work);
         assert_eq!(tie.preferred_peer_id, None);
 
-        network.mine_next("peer-1").unwrap();
+        network.mine_next("peer-1", 0).unwrap();
         let comparison = network.compare("peer-1", "peer-2").unwrap();
         assert_eq!(comparison.preferred_peer_id.as_deref(), Some("peer-1"));
         let result = network.propagate("peer-1", "peer-2").unwrap();
@@ -382,6 +490,50 @@ mod tests {
                 .remove(&copy.id)
                 .unwrap_err()
                 .contains("At least one")
+        );
+    }
+
+    #[test]
+    fn editing_and_reminging_an_individual_peer_block_preserves_isolation() {
+        let mut network = PeerNetwork::new().unwrap();
+        let first = network.mine_next("peer-1", 0).unwrap();
+        network.mine_next("peer-1", 0).unwrap();
+        let original_other_tip = network.view("peer-2").unwrap().tip_hash;
+        let mut edited = first.headers[1].clone();
+        edited.previous_hash =
+            "1111111111111111111111111111111111111111111111111111111111111111".into();
+        let invalid = network
+            .edit_block("peer-1", 1, edited, "editable payload".into())
+            .unwrap();
+        assert!(!invalid.valid);
+        assert_eq!(network.view("peer-2").unwrap().tip_hash, original_other_tip);
+
+        let repaired = network.remine_from("peer-1", 1, 2).unwrap();
+        assert!(repaired.valid);
+        assert!(repaired.hashes[1].as_deref().unwrap().starts_with("00"));
+        assert!(repaired.hashes[2].as_deref().unwrap().starts_with("00"));
+        assert_eq!(repaired.payloads[1], "editable payload");
+        assert_eq!(network.view("peer-2").unwrap().tip_hash, original_other_tip);
+    }
+
+    #[test]
+    fn newly_mined_peer_block_obeys_the_selected_prefix_difficulty() {
+        let mut network = PeerNetwork::new().unwrap();
+        let peer = network.mine_next("peer-1", 2).unwrap();
+        assert!(peer.headers[1].hash().unwrap().starts_with("00"));
+        assert!(network.validate("peer-1").unwrap().valid);
+    }
+
+    #[test]
+    fn peer_edit_keeps_the_shared_target_fixed() {
+        let mut network = PeerNetwork::new().unwrap();
+        let mut header = network.view("peer-1").unwrap().headers[0].clone();
+        header.bits = 0x1f00_ffff;
+        assert!(
+            network
+                .edit_block("peer-1", 0, header, String::new())
+                .unwrap_err()
+                .contains("target is fixed")
         );
     }
 }
