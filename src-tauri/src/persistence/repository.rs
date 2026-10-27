@@ -224,6 +224,36 @@ mod tests {
     }
 
     #[test]
+    fn updating_one_experiment_does_not_change_another_snapshot() {
+        let repository = ExperimentRepository::in_memory().unwrap();
+        let (first_name, kind, description, first_data) = sample();
+        let first = repository
+            .create(first_name, kind.clone(), description.clone(), first_data)
+            .unwrap();
+        let second = repository
+            .create(
+                "Second experiment".into(),
+                kind,
+                description,
+                serde_json::json!({"separate": true}),
+            )
+            .unwrap();
+
+        let mut changed = first.clone();
+        changed.data = serde_json::json!({"only": "first"});
+        repository.update(changed).unwrap();
+
+        assert_eq!(
+            repository.get(&first.id).unwrap().unwrap().data,
+            serde_json::json!({"only": "first"})
+        );
+        assert_eq!(
+            repository.get(&second.id).unwrap().unwrap().data,
+            serde_json::json!({"separate": true})
+        );
+    }
+
+    #[test]
     fn records_survive_database_reopen() {
         let path =
             std::env::temp_dir().join(format!("chain-v-test-{}.sqlite3", uuid::Uuid::new_v4()));

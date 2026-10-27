@@ -94,3 +94,27 @@ pub fn run_demo(amount: u64, fee: u64) -> Result<TransactionDemo, String> {
         remaining_utxos,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn demo_returns_a_verified_spend_and_only_the_post_spend_utxos() {
+        let demo = run_demo(25_000_000, 1_000_000).unwrap();
+        assert_eq!(demo.validation.input_value, LEARNING_COINBASE_REWARD);
+        assert_eq!(demo.validation.output_value, 49_000_000);
+        assert_eq!(demo.validation.fee, 1_000_000);
+        assert_eq!(demo.validation.verified_signatures, 1);
+        assert_eq!(demo.transaction.inputs.len(), 1);
+        assert_eq!(demo.transaction.outputs.len(), 2);
+        assert_eq!(demo.remaining_utxos.len(), 2);
+    }
+
+    #[test]
+    fn demo_rejects_zero_overflow_and_amounts_beyond_the_coinbase() {
+        assert!(run_demo(0, 0).is_err());
+        assert!(run_demo(LEARNING_COINBASE_REWARD, 1).is_err());
+        assert!(run_demo(u64::MAX, 1).is_err());
+    }
+}
