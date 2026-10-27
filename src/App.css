@@ -663,6 +663,18 @@
   overflow-wrap: anywhere;
 }
 
+.snapshot-success {
+  margin: 10px 0;
+  padding: 9px 11px;
+  color: var(--success);
+  background: var(--success-soft);
+  border: 1px solid var(--success-border);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .button {
   display: inline-flex;
   min-height: 39px;

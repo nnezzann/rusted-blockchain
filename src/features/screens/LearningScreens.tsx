@@ -524,6 +524,8 @@ export function ChainLabScreen({ onNavigate, learningMode }: Props) {
   const [selectedBlock, setSelectedBlock] = useState<number | null>(0);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [savingSnapshot, setSavingSnapshot] = useState(false);
+  const [snapshotNotice, setSnapshotNotice] = useState("");
   const [error, setError] = useState("");
 
   const loadExample = async () => {
@@ -619,16 +621,37 @@ export function ChainLabScreen({ onNavigate, learningMode }: Props) {
     }
   };
 
+  const saveChainSnapshot = async () => {
+    setSavingSnapshot(true);
+    setError("");
+    setSnapshotNotice("");
+    try {
+      const saved = await createExperiment({
+        name: `Header chain · ${new Date().toLocaleString()}`,
+        kind: "Header chain",
+        description: "Rust-validated header-chain snapshot. This does not include transactions.",
+        data: { headers, validation },
+      });
+      setSnapshotNotice(`Saved “${saved.name}” to SQLite experiments.`);
+    } catch (reason) {
+      setError(`Could not save chain snapshot: ${errorMessage(reason)}`);
+    } finally {
+      setSavingSnapshot(false);
+    }
+  };
+
   return (
     <LabLayout title="Linked blocks" icon="chain" note="A block commits to its parent using the previous header hash." guidance="Each block points to its parent by storing that parent's hash. Changing an earlier block breaks the later link unless descendants are updated and re-mined in sequence." learningMode={learningMode} backendConnected>
       <div className="chain-toolbar">
         <div><span className={`sample-pill${validation?.valid ? " status-pill--success" : ""}`}>{validation?.valid ? "VALID HEADER CHAIN" : "RUST VALIDATION"}</span><span className="chain-count">{headers.length} blocks · header proof-of-work only</span></div>
         <div className="toolbar-actions">
           <button className="button button--secondary" disabled={busy || loading} onClick={() => void loadExample()}><Icon name="refresh" size={15} /> Reset example</button>
+          <button className="button button--secondary" disabled={busy || loading || !validation?.valid || savingSnapshot} onClick={() => void saveChainSnapshot()}><Icon name="archive" size={15} /> {savingSnapshot ? "Saving…" : "Save snapshot"}</button>
           <button className="button button--primary" disabled={busy || loading || !validation?.valid} onClick={() => void addBlock()}><Icon name="plus" size={15} /> Add Block</button>
         </div>
       </div>
       {error && <p className="backend-error" role="alert">{error}</p>}
+      {snapshotNotice && <p className="snapshot-success" role="status">{snapshotNotice}</p>}
       <div className="chain-list">
         {loading && <div className="panel lab-panel" role="status">Creating and mining a three-block example in Rust…</div>}
         {!loading && headers.map((header, index) => {
@@ -671,6 +694,27 @@ export function TransactionsScreen({ learningMode }: ModeProps) {
   const [demo, setDemo] = useState<TransactionDemo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [savingDemo, setSavingDemo] = useState(false);
+  const [saveNotice, setSaveNotice] = useState("");
+  const saveDemo = async () => {
+    if (!demo) return;
+    setSavingDemo(true);
+    setError("");
+    setSaveNotice("");
+    try {
+      const saved = await createExperiment({
+        name: `Signed spend · ${new Date().toLocaleString()}`,
+        kind: "Transaction and UTXO",
+        description: "Verified Chain-V demo transaction with its post-spend UTXO snapshot.",
+        data: { transactionDemo: demo },
+      });
+      setSaveNotice(`Saved “${saved.name}” to SQLite experiments.`);
+    } catch (reason) {
+      setError(`Could not save transaction snapshot: ${errorMessage(reason)}`);
+    } finally {
+      setSavingDemo(false);
+    }
+  };
   const tabs: { id: TransactionTab; label: string; icon: IconName }[] = [
     { id: "transactions", label: "Transactions", icon: "arrows" },
     { id: "utxos", label: "UTXOs", icon: "database" },
@@ -753,6 +797,8 @@ export function TransactionsScreen({ learningMode }: ModeProps) {
                 </div>
                 <div className="derived-value"><span>Transaction ID · SHA-256d</span><code>{demo.validation.transactionId}</code></div>
                 <p className="field-hint">The temporary signing keys are discarded after the command. No key material is returned or persisted.</p>
+                <button className="button button--secondary" disabled={savingDemo} onClick={() => void saveDemo()}><Icon name="archive" size={14} /> {savingDemo ? "Saving snapshot…" : "Save transaction experiment"}</button>
+                {saveNotice && <p className="snapshot-success" role="status">{saveNotice}</p>}
               </div>}
             </section>
             <section className="panel transaction-status-panel">

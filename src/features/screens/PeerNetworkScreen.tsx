@@ -12,6 +12,7 @@ import {
   type PeerPropagation,
   type PeerView,
 } from "../../services/nativeRuntime";
+import { createExperiment } from "../../services/experiments";
 
 export function PeerNetworkScreen() {
   const [peers, setPeers] = useState<PeerView[]>([]);
@@ -25,6 +26,8 @@ export function PeerNetworkScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [lastAction, setLastAction] = useState<PeerPropagation | null>(null);
+  const [savingPeerId, setSavingPeerId] = useState<string | null>(null);
+  const [snapshotNotice, setSnapshotNotice] = useState("");
 
   const refreshPeers = async () => {
     try {
@@ -120,6 +123,25 @@ export function PeerNetworkScreen() {
     });
   };
 
+  const savePeerSnapshot = async (peer: PeerView) => {
+    setSavingPeerId(peer.id);
+    setError("");
+    setSnapshotNotice("");
+    try {
+      const saved = await createExperiment({
+        name: `${peer.name} chain · ${new Date().toLocaleString()}`,
+        kind: "Peer chain",
+        description: "Validated header-only snapshot exported from the in-process peer simulation.",
+        data: { peer },
+      });
+      setSnapshotNotice(`Saved “${saved.name}” to SQLite experiments.`);
+    } catch (reason) {
+      setError(`Could not save peer snapshot: ${errorMessage(reason)}`);
+    } finally {
+      setSavingPeerId(null);
+    }
+  };
+
   const propagate = async (source: PeerView, destination: PeerView) => {
     setBusy(true);
     setError("");
@@ -146,6 +168,7 @@ export function PeerNetworkScreen() {
           <button className="icon-button" aria-label="Dismiss error" onClick={() => setError("")}><Icon name="close" size={15} /></button>
         </div>
       )}
+      {snapshotNotice && <p className="snapshot-success" role="status">{snapshotNotice}</p>}
       {lastAction && <div className={`notice ${lastAction.adopted ? "notice--info" : "notice--warning"}`} role="status"><Icon name="info" size={16} /><p>{lastAction.reason} Fork point: {lastAction.forkHeight === null ? "none" : `block ${lastAction.forkHeight}`}.</p></div>}
 
       <div className="peer-toolbar">
@@ -201,6 +224,7 @@ export function PeerNetworkScreen() {
                   <div className="peer-card-tip"><small>Tip hash · Rust</small><code>{peer.tipHash}</code></div>
                   <div className="peer-card-actions">
                     <button className="button button--secondary" disabled={busy || !peer.valid} onClick={() => void runPeerAction(async () => { await minePeerBlock(peer.id); })}><Icon name="pickaxe" size={14} /> Mine block</button>
+                    <button className="icon-button" aria-label={`Save ${peer.name} chain snapshot`} title="Save chain snapshot" disabled={savingPeerId === peer.id} onClick={() => void savePeerSnapshot(peer)}><Icon name="archive" size={15} /></button>
                     <button className="icon-button icon-button--danger" aria-label={`Remove ${peer.name}`} title="Remove peer" disabled={busy || peers.length <= 1} onClick={() => void deletePeer(peer)}><Icon name="trash" size={15} /></button>
                   </div>
                 </article>
